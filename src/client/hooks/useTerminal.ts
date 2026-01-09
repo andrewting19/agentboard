@@ -24,23 +24,30 @@ export function useTerminal({
   const fitAddonRef = useRef<FitAddon | null>(null)
   const webglAddonRef = useRef<WebglAddon | null>(null)
   const resizeTimer = useRef<number | null>(null)
-  const sessionIdRef = useRef<string | null>(sessionId)
-  const initializedRef = useRef(false)
 
+  // Use refs for values that callbacks need to access
+  const sessionIdRef = useRef<string | null>(sessionId)
+  const sendMessageRef = useRef(sendMessage)
+
+  // Keep refs in sync
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
 
-  // Terminal initialization - only once
+  useEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
+
+  // Terminal initialization - only once on mount
   useEffect(() => {
     const container = containerRef.current
-    if (!container || initializedRef.current) {
-      return
-    }
+    if (!container) return
 
-    // Clear any existing content in container
+    // Already initialized
+    if (terminalRef.current) return
+
+    // Clear container
     container.innerHTML = ''
-    initializedRef.current = true
 
     const terminal = new Terminal({
       fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", monospace',
@@ -61,7 +68,7 @@ export function useTerminal({
       terminal.loadAddon(webglAddon)
       webglAddonRef.current = webglAddon
     } catch {
-      // WebGL addon is optional.
+      // WebGL addon is optional
     }
 
     terminal.open(container)
@@ -80,98 +87,94 @@ export function useTerminal({
       return true
     })
 
-    terminalRef.current = terminal
-    fitAddonRef.current = fitAddon
-
-    const dispose = terminal.onData((data) => {
+    // Handle input
+    terminal.onData((data) => {
       const activeSession = sessionIdRef.current
       if (activeSession) {
-        sendMessage({ type: 'terminal-input', sessionId: activeSession, data })
+        sendMessageRef.current({ type: 'terminal-input', sessionId: activeSession, data })
       }
     })
 
+    terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
+
     return () => {
-      dispose.dispose()
-      // Dispose WebGL addon first to avoid cleanup race conditions
       if (webglAddonRef.current) {
         try {
           webglAddonRef.current.dispose()
         } catch {
-          // Ignore errors during WebGL addon disposal
+          // Ignore
         }
         webglAddonRef.current = null
       }
       try {
         terminal.dispose()
       } catch {
-        // Ignore errors during terminal disposal (can happen in React StrictMode)
+        // Ignore
       }
-      // Clear container
       if (container) {
         container.innerHTML = ''
       }
       terminalRef.current = null
       fitAddonRef.current = null
-      initializedRef.current = false
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- theme handled by separate effect
-  }, [sendMessage])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount
 
-  // Update theme when it changes (without recreating terminal)
+  // Update theme
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.options.theme = theme
     }
   }, [theme])
 
+  // Handle session changes - attach/detach
+  const prevSessionIdRef = useRef<string | null>(null)
+
   useEffect(() => {
-    if (!terminalRef.current) {
-      return
+    const terminal = terminalRef.current
+    if (!terminal) return
+
+    const prevSessionId = prevSessionIdRef.current
+
+    // Detach from previous session
+    if (prevSessionId && prevSessionId !== sessionId) {
+      sendMessage({ type: 'terminal-detach', sessionId: prevSessionId })
     }
 
-    if (sessionId) {
-      // Clear terminal completely before attaching to new session
-      terminalRef.current.reset()
-      terminalRef.current.clear()
-      terminalRef.current.writeln(`\u001b[90mAttached to ${sessionId}\u001b[0m`)
+    // Attach to new session
+    if (sessionId && sessionId !== prevSessionId) {
+      // Clear and reset for new session
+      terminal.clear()
+      terminal.write('\x1b[2J\x1b[H') // Clear screen and move cursor to home
       sendMessage({ type: 'terminal-attach', sessionId })
     }
 
-    return () => {
-      if (sessionId) {
-        sendMessage({ type: 'terminal-detach', sessionId })
-      }
-      // Clear on detach too to prevent stale content showing
-      if (terminalRef.current) {
-        terminalRef.current.clear()
-      }
-    }
-  }, [sendMessage, sessionId])
+    prevSessionIdRef.current = sessionId
+  }, [sessionId, sendMessage])
 
+  // Subscribe to terminal output - stable subscription that checks sessionId via ref
   useEffect(() => {
-    if (!terminalRef.current || !sessionId) {
-      return
-    }
-
     const unsubscribe = subscribe((message) => {
-      if (message.type === 'terminal-output' && message.sessionId === sessionId) {
-        terminalRef.current?.write(message.data)
+      if (
+        message.type === 'terminal-output' &&
+        message.sessionId === sessionIdRef.current &&
+        terminalRef.current
+      ) {
+        terminalRef.current.write(message.data)
       }
     })
 
-    return () => {
-      unsubscribe()
-    }
-  }, [sessionId, subscribe])
+    return unsubscribe
+  }, [subscribe])
 
+  // Handle resize
   useEffect(() => {
-    if (!containerRef.current || !terminalRef.current || !fitAddonRef.current) {
-      return
-    }
-
+    const container = containerRef.current
     const terminal = terminalRef.current
     const fitAddon = fitAddonRef.current
-    const container = containerRef.current
+
+    if (!container || !terminal || !fitAddon) return
 
     const handleResize = () => {
       if (resizeTimer.current) {
@@ -180,10 +183,11 @@ export function useTerminal({
 
       resizeTimer.current = window.setTimeout(() => {
         fitAddon.fit()
-        if (sessionId) {
-          sendMessage({
+        const currentSessionId = sessionIdRef.current
+        if (currentSessionId) {
+          sendMessageRef.current({
             type: 'terminal-resize',
-            sessionId,
+            sessionId: currentSessionId,
             cols: terminal.cols,
             rows: terminal.rows,
           })
@@ -201,7 +205,7 @@ export function useTerminal({
         window.clearTimeout(resizeTimer.current)
       }
     }
-  }, [sendMessage, sessionId])
+  }, [])
 
   return { containerRef }
 }
