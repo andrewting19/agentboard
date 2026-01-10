@@ -4,7 +4,9 @@ import Header from './components/Header'
 import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
+import SettingsModal from './components/SettingsModal'
 import { useSessionStore } from './stores/sessionStore'
+import { useSettingsStore } from './stores/settingsStore'
 import { useThemeStore } from './stores/themeStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useNotifications } from './hooks/useNotifications'
@@ -14,6 +16,7 @@ import { sortSessions } from './utils/sessions'
 
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
@@ -32,6 +35,9 @@ export default function App() {
   const connectionError = useSessionStore((state) => state.connectionError)
 
   const theme = useThemeStore((state) => state.theme)
+  const defaultProjectDir = useSettingsStore(
+    (state) => state.defaultProjectDir
+  )
 
   const { sendMessage, subscribe } = useWebSocket()
   const { notify, requestPermission } = useNotifications()
@@ -126,6 +132,7 @@ export default function App() {
   }, [isModalOpen, setSelectedSessionId, sortedSessions])
 
   const handleNewSession = () => setIsModalOpen(true)
+  const handleOpenSettings = () => setIsSettingsOpen(true)
 
   const handleCreateSession = (projectPath: string, name?: string) => {
     sendMessage({ type: 'session-create', projectPath, name })
@@ -155,6 +162,7 @@ export default function App() {
         needsApprovalCount={needsApprovalCount}
         onNewSession={handleNewSession}
         onRefresh={handleRefresh}
+        onOpenSettings={handleOpenSettings}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -188,6 +196,14 @@ export default function App() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreate={handleCreateSession}
+        defaultProjectDir={defaultProjectDir}
+        activeProjectPath={selectedSession?.projectPath}
+        activeProjectName={selectedSession?.name}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
     </div>
   )

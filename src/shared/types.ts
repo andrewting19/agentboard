@@ -5,6 +5,7 @@ export type SessionStatus =
   | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
+export type AgentType = 'claude' | 'codex'
 
 export interface Session {
   id: string
@@ -14,6 +15,7 @@ export interface Session {
   status: SessionStatus
   lastActivity: string
   logFile?: string
+  agentType?: AgentType
   source: SessionSource
   command?: string
 }

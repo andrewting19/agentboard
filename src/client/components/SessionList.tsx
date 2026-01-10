@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
+import { formatCommandLabel } from '../utils/sessionLabel'
 
 interface SessionListProps {
   sessions: Session[]
@@ -142,6 +143,7 @@ function SessionRow({
   const inputRef = useRef<HTMLInputElement>(null)
   const [editValue, setEditValue] = useState(session.name)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const commandLabel = formatCommandLabel(session)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -224,10 +226,10 @@ function SessionRow({
               </span>
             )}
           </div>
-          {session.command && (
+          {commandLabel && (
             <div className="mt-0.5">
               <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                {session.command}
+                {commandLabel}
               </span>
             </div>
           )}

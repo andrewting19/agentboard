@@ -6,6 +6,7 @@ interface HeaderProps {
   needsApprovalCount: number
   onNewSession: () => void
   onRefresh: () => void
+  onOpenSettings: () => void
 }
 
 const statusDot: Record<ConnectionStatus, string> = {
@@ -21,6 +22,7 @@ export default function Header({
   needsApprovalCount,
   onNewSession,
   onRefresh,
+  onOpenSettings,
 }: HeaderProps) {
   const theme = useThemeStore((state) => state.theme)
   const toggleTheme = useThemeStore((state) => state.toggleTheme)
@@ -53,6 +55,9 @@ export default function Header({
         </button>
         <button onClick={onRefresh} className="btn">
           Refresh
+        </button>
+        <button onClick={onOpenSettings} className="btn">
+          Settings
         </button>
         <button onClick={onNewSession} className="btn btn-primary">
           + New

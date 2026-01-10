@@ -4,12 +4,18 @@ interface NewSessionModalProps {
   isOpen: boolean
   onClose: () => void
   onCreate: (projectPath: string, name?: string) => void
+  defaultProjectDir: string
+  activeProjectPath?: string
+  activeProjectName?: string
 }
 
 export default function NewSessionModal({
   isOpen,
   onClose,
   onCreate,
+  defaultProjectDir,
+  activeProjectPath,
+  activeProjectName,
 }: NewSessionModalProps) {
   const [projectPath, setProjectPath] = useState('')
   const [name, setName] = useState('')
@@ -18,8 +24,12 @@ export default function NewSessionModal({
     if (!isOpen) {
       setProjectPath('')
       setName('')
+      return
     }
-  }, [isOpen])
+    const basePath = activeProjectPath?.trim() || defaultProjectDir
+    setProjectPath(basePath)
+    setName(activeProjectName?.trim() || '')
+  }, [activeProjectName, activeProjectPath, defaultProjectDir, isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -35,12 +45,33 @@ export default function NewSessionModal({
     return null
   }
 
+  const resolveProjectPath = (value: string) => {
+    const trimmedValue = value.trim()
+    const baseDir = activeProjectPath?.trim() || defaultProjectDir.trim()
+    if (!trimmedValue) {
+      return baseDir
+    }
+
+    const isAbsolute =
+      trimmedValue.startsWith('/') ||
+      trimmedValue.startsWith('~') ||
+      /^[A-Za-z]:[\\/]/.test(trimmedValue)
+
+    if (isAbsolute || !baseDir) {
+      return trimmedValue
+    }
+
+    const base = baseDir.replace(/[\\/]+$/, '')
+    return `${base}/${trimmedValue}`
+  }
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
-    if (!projectPath.trim()) {
+    const resolvedPath = resolveProjectPath(projectPath)
+    if (!resolvedPath) {
       return
     }
-    onCreate(projectPath.trim(), name.trim() || undefined)
+    onCreate(resolvedPath, name.trim() || undefined)
     onClose()
   }
 
@@ -59,9 +90,14 @@ export default function NewSessionModal({
           New Session
         </h2>
         <p className="mt-2 text-xs text-muted">
-          Enter the absolute project path. A tmux window will launch Claude in
-          that directory.
+          Enter an absolute project path or a folder name. Relative paths use
+          the base directory.
         </p>
+        {(activeProjectPath?.trim() || defaultProjectDir.trim()) ? (
+          <p className="mt-1 text-xs text-muted">
+            Base: {activeProjectPath?.trim() || defaultProjectDir.trim()}
+          </p>
+        ) : null}
 
         <div className="mt-5 space-y-4">
           <div>
@@ -71,7 +107,11 @@ export default function NewSessionModal({
             <input
               value={projectPath}
               onChange={(event) => setProjectPath(event.target.value)}
-              placeholder="/Users/you/code/my-project"
+              placeholder={
+                activeProjectPath ||
+                defaultProjectDir ||
+                '/Users/you/code/my-project'
+              }
               className="input"
               autoFocus
             />

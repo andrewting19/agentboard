@@ -38,11 +38,16 @@ export class SessionManager {
   createWindow(projectPath: string, name?: string): Session {
     this.ensureSession()
 
-    if (!fs.existsSync(projectPath)) {
-      throw new Error(`Project path does not exist: ${projectPath}`)
+    const resolvedPath = resolveProjectPath(projectPath)
+    if (!resolvedPath) {
+      throw new Error('Project path is required')
     }
 
-    const baseName = (name || path.basename(projectPath)).trim()
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(`Project path does not exist: ${resolvedPath}`)
+    }
+
+    const baseName = (name || path.basename(resolvedPath)).trim()
     if (!baseName) {
       throw new Error('Session name is required')
     }
@@ -62,7 +67,7 @@ export class SessionManager {
       '-n',
       finalName,
       '-c',
-      projectPath,
+      resolvedPath,
       'claude',
     ])
 
@@ -143,7 +148,7 @@ export class SessionManager {
       '-t',
       sessionName,
       '-F',
-      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{pane_current_command}',
+      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{pane_start_command}',
     ])
 
     return output
@@ -232,4 +237,23 @@ function runTmux(args: string[]): string {
   }
 
   return result.stdout.toString()
+}
+
+const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+
+function resolveProjectPath(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (
+    homeDir &&
+    (trimmed === '~' || trimmed.startsWith('~/') || trimmed.startsWith('~\\'))
+  ) {
+    const remainder = trimmed === '~' ? '' : trimmed.slice(2)
+    return path.resolve(path.join(homeDir, remainder))
+  }
+
+  return path.resolve(trimmed)
 }

@@ -19,13 +19,6 @@
   src: url('https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.18/files/jetbrains-mono-latin-700-normal.woff2') format('woff2');
 }
 
-/* Force text rendering for symbols - prevents iOS emoji fallback */
-@supports (font-variant-emoji: text) {
-  .terminal-text-overlay {
-    font-variant-emoji: text;
-  }
-}
-
 /* Dark theme (default) */
 :root,
 [data-theme="dark"] {
@@ -217,6 +210,26 @@ body {
 .xterm {
   font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
   padding: 8px;
+}
+
+.ios-native-term-selection .xterm .xterm-accessibility:not(.debug) {
+  pointer-events: auto;
+}
+
+.ios-native-term-selection .xterm .xterm-accessibility-tree {
+  -webkit-user-select: text;
+  user-select: text;
+  white-space: pre;
+  font-size: var(--xterm-font-size, 13px);
+  line-height: var(--xterm-cell-height, 18px);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  transform: translateY(var(--xterm-a11y-offset, 0px));
+  transform-origin: top left;
+}
+
+.ios-native-term-selection .xterm .xterm-accessibility-tree > div {
+  line-height: var(--xterm-cell-height, 18px);
 }
 
 .xterm .xterm-viewport {

@@ -27,11 +27,17 @@ export class SessionRegistry extends EventEmitter {
         existing?.lastActivity,
         session.lastActivity
       )
+      const hasLogFile = Object.prototype.hasOwnProperty.call(session, 'logFile')
+      const hasAgentType = Object.prototype.hasOwnProperty.call(
+        session,
+        'agentType'
+      )
       nextMap.set(session.id, {
         ...session,
         status: existing?.status ?? session.status,
         lastActivity: nextLastActivity,
-        logFile: existing?.logFile ?? session.logFile,
+        logFile: hasLogFile ? session.logFile : existing?.logFile,
+        agentType: hasAgentType ? session.agentType : existing?.agentType,
       })
     }
 

@@ -5,6 +5,7 @@ import { WebglAddon } from 'xterm-addon-webgl'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
 import type { ServerMessage } from '@shared/types'
 import type { ITheme } from 'xterm'
+import { isIOSDevice } from '../utils/device'
 
 // Text presentation selector - forces text rendering instead of emoji
 const TEXT_VS = '\uFE0E'
@@ -47,6 +48,7 @@ export function useTerminal({
   fontSize,
   onScrollChange,
 }: UseTerminalOptions) {
+  const isiOS = isIOSDevice()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -107,15 +109,21 @@ export function useTerminal({
     // Clear container
     container.innerHTML = ''
 
+    // Calculate lineHeight that produces integer cell height for any fontSize
+    // This keeps cell sizing stable across fractional line-height rendering
+    const calcLineHeight = (size: number) => Math.round(size * 1.4) / size
+    const computedLineHeight = calcLineHeight(fontSize)
+
     const terminal = new Terminal({
       fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", monospace',
-      fontSize: 13,
-      lineHeight: 1.4,
+      fontSize,
+      lineHeight: computedLineHeight,
       scrollback: 5000,
       cursorBlink: false,
       cursorStyle: 'underline',
       convertEol: true,
       theme,
+      screenReaderMode: isiOS,
     })
 
     const fitAddon = new FitAddon()
@@ -213,12 +221,14 @@ export function useTerminal({
     }
   }, [theme])
 
-  // Update font size
+  // Update font size (and lineHeight to maintain integer cell height)
   useEffect(() => {
     const terminal = terminalRef.current
     const fitAddon = fitAddonRef.current
     if (terminal && fitAddon) {
       terminal.options.fontSize = fontSize
+      // Recalculate lineHeight for integer cell height
+      terminal.options.lineHeight = Math.round(fontSize * 1.4) / fontSize
       fitAddon.fit()
       // Notify server of new dimensions
       const attached = attachedSessionRef.current

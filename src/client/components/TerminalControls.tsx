@@ -18,6 +18,7 @@ interface TerminalControlsProps {
   sessions: SessionInfo[]
   currentSessionId: string | null
   onSelectSession: (sessionId: string) => void
+  hideSessionSwitcher?: boolean
 }
 
 interface ControlKey {
@@ -65,6 +66,7 @@ export default function TerminalControls({
   sessions,
   currentSessionId,
   onSelectSession,
+  hideSessionSwitcher = false,
 }: TerminalControlsProps) {
   const handlePress = (key: string) => {
     if (disabled) return
@@ -77,8 +79,8 @@ export default function TerminalControls({
     onSelectSession(sessionId)
   }
 
-  // Only show session row if there are multiple sessions
-  const showSessionRow = sessions.length > 1
+  // Only show session row if there are multiple sessions and not hidden
+  const showSessionRow = sessions.length > 1 && !hideSessionSwitcher
 
   return (
     <div className="terminal-controls flex flex-col gap-1.5 px-2 py-2.5 bg-elevated border-t border-border md:hidden">

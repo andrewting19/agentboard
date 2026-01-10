@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
+import path from 'node:path'
 import type { Session } from '../shared/types'
+import { config } from './config'
 import { discoverLogFiles, type LogFileInfo } from './logDiscovery'
 import { parseLogLine } from './logParser'
 import { transitionStatus } from './statusMachine'
@@ -99,10 +101,11 @@ export class StatusWatcher {
       if (current?.logFile) {
         this.stopWatching(session.id)
       }
-      if (session.status !== 'unknown' || session.logFile) {
+      if (session.status !== 'unknown' || session.logFile || session.agentType) {
         this.registry.updateSession(session.id, {
           status: 'unknown',
           logFile: undefined,
+          agentType: undefined,
         })
       }
       return
@@ -181,7 +184,10 @@ export class StatusWatcher {
     }
 
     this.states.set(session.id, state)
-    this.registry.updateSession(session.id, { logFile })
+    this.registry.updateSession(session.id, {
+      logFile,
+      agentType: inferAgentType(logFile),
+    })
 
     await this.bootstrapFromTail(session, state)
 
@@ -327,4 +333,42 @@ export class StatusWatcher {
     }
   }
 
+}
+
+function normalizePath(value: string): string {
+  if (!value) {
+    return ''
+  }
+  return path.resolve(value)
+}
+
+function isSubPath(parent: string, child: string): boolean {
+  if (!parent || !child) {
+    return false
+  }
+  const relative = path.relative(parent, child)
+  return (
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
+  )
+}
+
+export function inferAgentType(
+  logFile: string | null
+): Session['agentType'] {
+  if (!logFile) {
+    return undefined
+  }
+
+  const normalizedLogFile = normalizePath(logFile)
+
+  if (isSubPath(config.claudeProjectsDir, normalizedLogFile)) {
+    return 'claude'
+  }
+
+  if (isSubPath(config.codexSessionsDir, normalizedLogFile)) {
+    return 'codex'
+  }
+
+  return undefined
 }
