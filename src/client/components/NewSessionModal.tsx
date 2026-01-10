@@ -5,6 +5,7 @@ interface NewSessionModalProps {
   onClose: () => void
   onCreate: (projectPath: string, name?: string) => void
   defaultProjectDir: string
+  lastProjectPath?: string | null
   activeProjectPath?: string
   activeProjectName?: string
 }
@@ -14,6 +15,7 @@ export default function NewSessionModal({
   onClose,
   onCreate,
   defaultProjectDir,
+  lastProjectPath,
   activeProjectPath,
   activeProjectName,
 }: NewSessionModalProps) {
@@ -26,10 +28,12 @@ export default function NewSessionModal({
       setName('')
       return
     }
-    const basePath = activeProjectPath?.trim() || defaultProjectDir
+    // Priority: active session -> last used -> default
+    const basePath =
+      activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
     setProjectPath(basePath)
     setName(activeProjectName?.trim() || '')
-  }, [activeProjectName, activeProjectPath, defaultProjectDir, isOpen])
+  }, [activeProjectName, activeProjectPath, defaultProjectDir, isOpen, lastProjectPath])
 
   useEffect(() => {
     if (!isOpen) return
@@ -47,7 +51,8 @@ export default function NewSessionModal({
 
   const resolveProjectPath = (value: string) => {
     const trimmedValue = value.trim()
-    const baseDir = activeProjectPath?.trim() || defaultProjectDir.trim()
+    const baseDir =
+      activeProjectPath?.trim() || lastProjectPath || defaultProjectDir.trim()
     if (!trimmedValue) {
       return baseDir
     }
@@ -93,9 +98,9 @@ export default function NewSessionModal({
           Enter an absolute project path or a folder name. Relative paths use
           the base directory.
         </p>
-        {(activeProjectPath?.trim() || defaultProjectDir.trim()) ? (
+        {(activeProjectPath?.trim() || lastProjectPath || defaultProjectDir.trim()) ? (
           <p className="mt-1 text-xs text-muted">
-            Base: {activeProjectPath?.trim() || defaultProjectDir.trim()}
+            Base: {activeProjectPath?.trim() || lastProjectPath || defaultProjectDir.trim()}
           </p>
         ) : null}
 
@@ -109,6 +114,7 @@ export default function NewSessionModal({
               onChange={(event) => setProjectPath(event.target.value)}
               placeholder={
                 activeProjectPath ||
+                lastProjectPath ||
                 defaultProjectDir ||
                 '/Users/you/code/my-project'
               }

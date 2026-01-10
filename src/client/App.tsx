@@ -38,6 +38,10 @@ export default function App() {
   const defaultProjectDir = useSettingsStore(
     (state) => state.defaultProjectDir
   )
+  const lastProjectPath = useSettingsStore((state) => state.lastProjectPath)
+  const setLastProjectPath = useSettingsStore(
+    (state) => state.setLastProjectPath
+  )
 
   const { sendMessage, subscribe } = useWebSocket()
   const { notify, requestPermission } = useNotifications()
@@ -69,6 +73,13 @@ export default function App() {
   const selectedSession = useMemo(() => {
     return sessions.find((session) => session.id === selectedSessionId) || null
   }, [selectedSessionId, sessions])
+
+  // Track last viewed project path
+  useEffect(() => {
+    if (selectedSession?.projectPath) {
+      setLastProjectPath(selectedSession.projectPath)
+    }
+  }, [selectedSession?.projectPath, setLastProjectPath])
 
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions])
 
@@ -136,6 +147,7 @@ export default function App() {
 
   const handleCreateSession = (projectPath: string, name?: string) => {
     sendMessage({ type: 'session-create', projectPath, name })
+    setLastProjectPath(projectPath)
   }
 
   const handleKillSession = (sessionId: string) => {
@@ -197,6 +209,7 @@ export default function App() {
         onClose={() => setIsModalOpen(false)}
         onCreate={handleCreateSession}
         defaultProjectDir={defaultProjectDir}
+        lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
         activeProjectName={selectedSession?.name}
       />
