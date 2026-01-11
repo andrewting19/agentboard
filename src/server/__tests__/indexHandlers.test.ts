@@ -505,9 +505,93 @@ describe('server message handlers', () => {
     expect(attached?.disposed).toBe(true)
     expect(ws.data.terminals.has(baseSession.id)).toBe(false)
   })
+
+  test('websocket close disposes all terminals', async () => {
+    const { serveOptions } = await loadIndex()
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const terminalA = new TerminalProxyMock('agentboard:1', {})
+    const terminalB = new TerminalProxyMock('agentboard:2', {})
+    const { ws } = createWs()
+    ws.data.terminals.set('session-a', terminalA)
+    ws.data.terminals.set('session-b', terminalB)
+
+    websocket.close?.(ws as never, 1000, 'test')
+
+    expect(terminalA.disposed).toBe(true)
+    expect(terminalB.disposed).toBe(true)
+    expect(ws.data.terminals.size).toBe(0)
+  })
+})
+
+describe('server signal handlers', () => {
+  test('SIGINT and SIGTERM cleanup terminals and exit', async () => {
+    const handlers = new Map<string, () => void>()
+    processAny.on = ((event: string, handler: () => void) => {
+      handlers.set(event, handler)
+      return processAny
+    }) as typeof processAny.on
+
+    const exitCodes: number[] = []
+    processAny.exit = ((code?: number) => {
+      exitCodes.push(code ?? 0)
+      return undefined as never
+    }) as typeof processAny.exit
+
+    const { serveOptions, registryInstance } = await loadIndex()
+    registryInstance.sessions = [baseSession]
+
+    const websocket = serveOptions.websocket
+    if (!websocket) {
+      throw new Error('WebSocket handlers not configured')
+    }
+
+    const { ws } = createWs()
+    websocket.open?.(ws as never)
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({ type: 'terminal-attach', sessionId: baseSession.id })
+    )
+
+    const attached = TerminalProxyMock.instances[TerminalProxyMock.instances.length - 1]
+
+    handlers.get('SIGINT')?.()
+    handlers.get('SIGTERM')?.()
+
+    expect(attached?.disposed).toBe(true)
+    expect(exitCodes).toEqual([0, 0])
+  })
 })
 
 describe('server fetch handlers', () => {
+  test('returns no response for successful websocket upgrades', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    const upgradeCalls: Array<{ url: string }> = []
+    const server = {
+      upgrade: (req: Request) => {
+        upgradeCalls.push({ url: req.url })
+        return true
+      },
+    } as unknown as Bun.Server<unknown>
+
+    const response = await fetchHandler.call(
+      server,
+      new Request('http://localhost/ws'),
+      server
+    )
+
+    expect(upgradeCalls).toHaveLength(1)
+    expect(response).toBeUndefined()
+  })
+
   test('returns upgrade failure for websocket requests', async () => {
     const { serveOptions } = await loadIndex()
     const fetchHandler = serveOptions.fetch
@@ -607,5 +691,40 @@ describe('server fetch handlers', () => {
     expect(uploadResponse.ok).toBe(true)
     expect(payload.path.startsWith('/tmp/paste-')).toBe(true)
     expect(payload.path.endsWith('.png')).toBe(true)
+  })
+
+  test('returns 500 when paste-image upload fails', async () => {
+    const { serveOptions } = await loadIndex()
+    const fetchHandler = serveOptions.fetch
+    if (!fetchHandler) {
+      throw new Error('Fetch handler not configured')
+    }
+
+    writeImpl = async () => {
+      throw new Error('write-failed')
+    }
+
+    const formData = new FormData()
+    const file = new File([new Uint8Array([1, 2, 3])], 'paste.png', {
+      type: 'image/png',
+    })
+    formData.append('image', file)
+
+    const response = await fetchHandler.call(
+      {} as Bun.Server<unknown>,
+      new Request('http://localhost/api/paste-image', {
+        method: 'POST',
+        body: formData,
+      }),
+      {} as Bun.Server<unknown>
+    )
+
+    if (!response) {
+      throw new Error('Expected response for paste-image failure')
+    }
+
+    expect(response.status).toBe(500)
+    const payload = (await response.json()) as { error: string }
+    expect(payload.error).toBe('write-failed')
   })
 })

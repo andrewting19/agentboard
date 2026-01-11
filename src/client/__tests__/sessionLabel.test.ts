@@ -46,6 +46,17 @@ describe('formatCommandLabel', () => {
     )
     expect(label).toBe('app')
   })
+
+  test('returns null when no label parts exist', () => {
+    const label = formatCommandLabel(
+      makeSession({
+        agentType: undefined,
+        command: '',
+        projectPath: '   ',
+      })
+    )
+    expect(label).toBeNull()
+  })
 })
 
 describe('getPathLeaf', () => {
@@ -55,5 +66,11 @@ describe('getPathLeaf', () => {
 
   test('handles Windows separators', () => {
     expect(getPathLeaf('C:\\Users\\me\\project')).toBe('project')
+  })
+
+  test('returns null for empty or root-only paths', () => {
+    expect(getPathLeaf('   ')).toBeNull()
+    expect(getPathLeaf('/')).toBeNull()
+    expect(getPathLeaf('\\\\')).toBeNull()
   })
 })

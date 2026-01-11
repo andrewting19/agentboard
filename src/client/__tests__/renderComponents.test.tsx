@@ -112,6 +112,46 @@ describe('component rendering', () => {
     expect(html).toContain('alpha')
   })
 
+  test('renders session list loading and empty states', () => {
+    const loadingHtml = renderToString(
+      <SessionList
+        sessions={[]}
+        selectedSessionId={null}
+        loading
+        error={null}
+        onSelect={() => {}}
+        onRename={() => {}}
+      />
+    )
+    expect(loadingHtml).toContain('animate-pulse')
+
+    const emptyHtml = renderToString(
+      <SessionList
+        sessions={[]}
+        selectedSessionId={null}
+        loading={false}
+        error={null}
+        onSelect={() => {}}
+        onRename={() => {}}
+      />
+    )
+    expect(emptyHtml).toContain('No sessions')
+  })
+
+  test('renders session list error state', () => {
+    const html = renderToString(
+      <SessionList
+        sessions={[baseSession]}
+        selectedSessionId={baseSession.id}
+        loading={false}
+        error="Oops"
+        onSelect={() => {}}
+        onRename={() => {}}
+      />
+    )
+    expect(html).toContain('Oops')
+  })
+
   test('renders terminal', () => {
     const html = renderToString(
       <Terminal
@@ -131,6 +171,51 @@ describe('component rendering', () => {
     expect(html).toContain('alpha')
   })
 
+  test('renders terminal placeholder when no session selected', () => {
+    const html = renderToString(
+      <Terminal
+        session={null}
+        sessions={[]}
+        connectionStatus="connected"
+        sendMessage={() => {}}
+        subscribe={() => () => {}}
+        onClose={() => {}}
+        onSelectSession={() => {}}
+        onNewSession={() => {}}
+        onKillSession={() => {}}
+        onRenameSession={() => {}}
+        onOpenSettings={() => {}}
+      />
+    )
+    expect(html).toContain('Select a session to view terminal')
+  })
+
+  test('renders terminal mobile switcher for multiple sessions', () => {
+    const secondSession = {
+      ...baseSession,
+      id: 'session-2',
+      name: 'beta',
+      status: 'waiting' as const,
+    }
+
+    const html = renderToString(
+      <Terminal
+        session={baseSession}
+        sessions={[baseSession, secondSession]}
+        connectionStatus="connected"
+        sendMessage={() => {}}
+        subscribe={() => () => {}}
+        onClose={() => {}}
+        onSelectSession={() => {}}
+        onNewSession={() => {}}
+        onKillSession={() => {}}
+        onRenameSession={() => {}}
+        onOpenSettings={() => {}}
+      />
+    )
+    expect(html).toContain('scroll-smooth')
+  })
+
   test('renders terminal controls', () => {
     const html = renderToString(
       <TerminalControls
@@ -141,6 +226,21 @@ describe('component rendering', () => {
       />
     )
     expect(html).toContain('terminal-controls')
+  })
+
+  test('renders terminal controls session row when multiple sessions', () => {
+    const html = renderToString(
+      <TerminalControls
+        onSendKey={() => {}}
+        sessions={[
+          { id: 'session-1', name: 'alpha', status: 'working' },
+          { id: 'session-2', name: 'beta', status: 'waiting' },
+        ]}
+        currentSessionId="session-1"
+        onSelectSession={() => {}}
+      />
+    )
+    expect(html).toContain('snap-mandatory')
   })
 
   test('renders new session modal', () => {
@@ -156,6 +256,21 @@ describe('component rendering', () => {
       />
     )
     expect(html).toContain('New Session')
+  })
+
+  test('does not render new session modal when closed', () => {
+    const html = renderToString(
+      <NewSessionModal
+        isOpen={false}
+        onClose={() => {}}
+        onCreate={() => {}}
+        defaultProjectDir="/tmp"
+        defaultCommand="claude"
+        lastProjectPath="/tmp/alpha"
+        activeProjectPath="/tmp/alpha"
+      />
+    )
+    expect(html).toBe('')
   })
 
   test('renders settings modal', () => {

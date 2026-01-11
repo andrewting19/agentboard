@@ -34,4 +34,22 @@ describe('visual viewport helpers', () => {
 
     expect(updateKeyboardInset({ viewport: null, win, doc })).toBe(false)
   })
+
+  test('clamps negative keyboard inset to zero', () => {
+    const style = {
+      value: '',
+      setProperty: (_key: string, val: string) => {
+        style.value = val
+      },
+    }
+    const doc = {
+      documentElement: { style },
+    } as unknown as Document
+    const win = { innerHeight: 600 } as Window
+    const viewport = { height: 800 } as VisualViewport
+
+    const updated = updateKeyboardInset({ viewport, win, doc })
+    expect(updated).toBe(true)
+    expect(style.value).toBe('0px')
+  })
 })

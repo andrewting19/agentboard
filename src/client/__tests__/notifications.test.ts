@@ -7,6 +7,10 @@ import {
 } from '../hooks/useNotifications'
 
 describe('notifications helpers', () => {
+  test('returns null when Audio is unavailable', () => {
+    expect(createNotificationAudio(undefined)).toBeNull()
+  })
+
   test('creates audio with volume set', () => {
     class FakeAudio {
       volume = 1
@@ -35,6 +39,27 @@ describe('notifications helpers', () => {
 
     const docVisible = { hidden: false } as unknown as Document
     expect(shouldShowNotification(NotificationCtor, docVisible)).toBe(false)
+  })
+
+  test('handles missing notifications and denied permissions', () => {
+    class FakeNotification {
+      static permission: NotificationPermission = 'denied'
+    }
+
+    expect(shouldRequestPermission(undefined)).toBe(false)
+    expect(shouldRequestPermission(FakeNotification as unknown as typeof Notification)).toBe(
+      false
+    )
+
+    expect(
+      shouldShowNotification(
+        FakeNotification as unknown as typeof Notification,
+        { hidden: true } as Document
+      )
+    ).toBe(false)
+    expect(
+      shouldShowNotification(undefined, { hidden: true } as Document)
+    ).toBe(false)
   })
 
   test('notifies when allowed and plays audio', async () => {
@@ -66,5 +91,53 @@ describe('notifications helpers', () => {
 
     expect(created).toEqual([{ title: 'Hello', body: 'World' }])
     expect(played).toBe(true)
+  })
+
+  test('plays audio even when notification is suppressed', async () => {
+    const created: Array<{ title: string; body: string }> = []
+
+    class FakeNotification {
+      static permission: NotificationPermission = 'denied'
+      constructor(title: string, options: { body?: string }) {
+        created.push({ title, body: options.body ?? '' })
+      }
+    }
+
+    let played = false
+    const audio = {
+      play: () => {
+        played = true
+        return Promise.resolve()
+      },
+    } as HTMLAudioElement
+
+    notifyWithAudio({
+      title: 'Nope',
+      body: 'Still audio',
+      NotificationCtor: FakeNotification as unknown as typeof Notification,
+      doc: { hidden: true } as Document,
+      audio,
+    })
+
+    expect(created).toEqual([])
+    expect(played).toBe(true)
+  })
+
+  test('ignores audio playback failures', async () => {
+    const audio = {
+      play: () => Promise.reject(new Error('blocked')),
+    } as HTMLAudioElement
+
+    expect(() => {
+      notifyWithAudio({
+        title: 'Hello',
+        body: 'World',
+        NotificationCtor: undefined,
+        doc: undefined,
+        audio,
+      })
+    }).not.toThrow()
+
+    await Promise.resolve()
   })
 })
