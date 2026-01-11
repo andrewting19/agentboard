@@ -154,4 +154,21 @@ describe('WebSocketManager', () => {
     manager.send({ type: 'session-refresh' })
     expect(ws?.sent).toHaveLength(1)
   })
+
+  test('error events update status with message', () => {
+    const manager = new WebSocketManager()
+    const statuses: Array<{ status: string; error: string | null }> = []
+    manager.subscribeStatus((status, error) => {
+      statuses.push({ status, error })
+    })
+
+    manager.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws?.triggerError()
+
+    expect(statuses[statuses.length - 1]).toEqual({
+      status: 'error',
+      error: 'WebSocket error',
+    })
+  })
 })
