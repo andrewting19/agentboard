@@ -1,5 +1,6 @@
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { PlusIcon } from '@untitledui-icons/react/line'
+import { getNavShortcutMod } from '../utils/device'
 
 interface HeaderProps {
   connectionStatus: ConnectionStatus
@@ -32,7 +33,7 @@ export default function Header({
       <button
         onClick={onNewSession}
         className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all"
-        title="New session (⌘⇧A)"
+        title={`New session (${getNavShortcutMod()}N)`}
       >
         <PlusIcon width={16} height={16} />
       </button>

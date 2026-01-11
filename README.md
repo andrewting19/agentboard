@@ -33,9 +33,12 @@ bun run start
 
 ## Keyboard Shortcuts
 
-- `Cmd+Shift+A` - New session
-- `Cmd+Shift+X` - Kill session
-- `Cmd+1-9` - Switch sessions
+| Action | Mac | Windows/Linux |
+|--------|-----|---------------|
+| Previous session | `Ctrl+Option+[` | `Ctrl+Shift+[` |
+| Next session | `Ctrl+Option+]` | `Ctrl+Shift+]` |
+| New session | `Ctrl+Option+N` | `Ctrl+Shift+N` |
+| Kill session | `Ctrl+Option+X` | `Ctrl+Shift+X` |
 
 ## Environment
 

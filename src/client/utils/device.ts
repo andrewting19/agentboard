@@ -17,3 +17,16 @@ export function isSafari(): boolean {
   // Safari but not Chrome (Chrome includes "Safari" in its UA)
   return /Safari/.test(ua) && !/Chrome/.test(ua) && !/Chromium/.test(ua)
 }
+
+export function isMacOS(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return navigator.platform.toUpperCase().indexOf('MAC') >= 0
+}
+
+// Keyboard shortcut display helpers
+
+// All app shortcuts: Ctrl+Option (Mac) / Ctrl+Shift (Win/Linux)
+// Mac: Ctrl+Option is unused by Safari and doesn't produce special chars
+export function getNavShortcutMod(): string {
+  return isMacOS() ? '⌃⌥' : '^⇧'
+}

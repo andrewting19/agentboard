@@ -3,7 +3,7 @@ import type { Session } from '@shared/types'
 import type { ConnectionStatus } from '../stores/sessionStore'
 import { useTerminal } from '../hooks/useTerminal'
 import { useThemeStore, terminalThemes } from '../stores/themeStore'
-import { isIOSDevice } from '../utils/device'
+import { isIOSDevice, getNavShortcutMod } from '../utils/device'
 import TerminalControls from './TerminalControls'
 import { PlusIcon, XCloseIcon, DotsVerticalIcon } from '@untitledui-icons/react/line'
 
@@ -531,7 +531,7 @@ export default function Terminal({
             <button
               onClick={onNewSession}
               className="flex h-7 w-7 items-center justify-center rounded bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all md:hidden"
-              title="New session (⌘⇧A)"
+              title={`New session (${getNavShortcutMod()}N)`}
             >
               <PlusIcon width={16} height={16} />
             </button>
@@ -541,7 +541,7 @@ export default function Terminal({
               <button
                 onClick={() => setShowEndConfirm(true)}
                 className="flex h-7 w-7 items-center justify-center rounded bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20 active:scale-95 transition-all"
-                title="End session (⌘⇧X)"
+                title={`End session (${getNavShortcutMod()}X)`}
               >
                 <XCloseIcon width={16} height={16} />
               </button>

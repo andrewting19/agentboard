@@ -99,12 +99,31 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
-      if (!(event.metaKey || event.ctrlKey)) return
 
       const key = event.key
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 
-      // Cmd+Shift+A: New session (Agent)
-      if (!event.altKey && event.shiftKey && key.toLowerCase() === 'a') {
+      // Bracket navigation: Ctrl+Option+[ / ] (Mac) or Ctrl+Shift+[ / ] (Win/Linux)
+      // Mac: Ctrl+Option doesn't produce special chars (unlike Cmd+Option)
+      const isNavShortcut = isMac
+        ? event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey
+        : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey
+
+      if (isNavShortcut && (key === '[' || key === ']')) {
+        event.preventDefault()
+        const currentIndex = sortedSessions.findIndex(s => s.id === selectedSessionId)
+        if (currentIndex === -1 && sortedSessions.length > 0) {
+          setSelectedSessionId(sortedSessions[0].id)
+          return
+        }
+        const delta = key === '[' ? -1 : 1
+        const newIndex = (currentIndex + delta + sortedSessions.length) % sortedSessions.length
+        setSelectedSessionId(sortedSessions[newIndex].id)
+        return
+      }
+
+      // New session: Ctrl+Option+N (Mac) / Ctrl+Shift+N (Win/Linux)
+      if (isNavShortcut && key.toLowerCase() === 'n') {
         event.preventDefault()
         if (!isModalOpen) {
           setIsModalOpen(true)
@@ -112,42 +131,14 @@ export default function App() {
         return
       }
 
-      // Cmd+Shift+X: Kill current session
-      if (!event.altKey && event.shiftKey && key.toLowerCase() === 'x') {
+      // Kill session: Ctrl+Option+X (Mac) / Ctrl+Shift+X (Win/Linux)
+      if (isNavShortcut && key.toLowerCase() === 'x') {
         event.preventDefault()
         if (selectedSessionId && !isModalOpen) {
           handleKillSession(selectedSessionId)
         }
         return
       }
-
-      // Other shortcuts require no shift and no modal open
-      if (event.shiftKey || isModalOpen) return
-
-      const activeElement = document.activeElement
-      if (activeElement instanceof HTMLElement) {
-        const tagName = activeElement.tagName
-        const isTerminalFocus = activeElement.closest('.xterm') !== null
-        if (
-          activeElement.isContentEditable ||
-          (!isTerminalFocus &&
-            (tagName === 'INPUT' ||
-              tagName === 'TEXTAREA' ||
-              tagName === 'SELECT'))
-        ) {
-          return
-        }
-      }
-
-      // Ctrl+1-9: Switch sessions (works in Safari without conflicts)
-      if (!event.ctrlKey || event.metaKey || !/^[1-9]$/.test(key)) return
-
-      const index = Number(key) - 1
-      const target = sortedSessions[index]
-      if (!target) return
-
-      event.preventDefault()
-      setSelectedSessionId(target.id)
     }
 
     window.addEventListener('keydown', handleKeyDown)

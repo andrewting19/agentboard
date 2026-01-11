@@ -4,6 +4,7 @@ import type { Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { formatCommandLabel } from '../utils/sessionLabel'
 import { useSettingsStore } from '../stores/settingsStore'
+import { getNavShortcutMod } from '../utils/device'
 
 interface SessionListProps {
   sessions: Session[]
@@ -117,6 +118,15 @@ export default function SessionList({
             </AnimatePresence>
           </div>
         )}
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="hidden shrink-0 border-t border-border px-3 py-2 md:block">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted">
+          <span>{getNavShortcutMod()}[ ] nav</span>
+          <span>{getNavShortcutMod()}N new</span>
+          <span>{getNavShortcutMod()}X kill</span>
+        </div>
       </div>
     </aside>
   )
@@ -247,18 +257,12 @@ function SessionRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          {shortcutLabel && (
-            <span
-              className="shortcut-badge hidden md:inline-flex"
-              title={`Shortcut: Ctrl+${shortcutLabel}`}
-              aria-label={`Shortcut Ctrl+${shortcutLabel}`}
-            >
-              <span>^</span>
-              <span>{shortcutLabel}</span>
-            </span>
-          )}
-        </div>
+        {/* Position indicator */}
+        {shortcutLabel && (
+          <span className="hidden text-xs tabular-nums text-muted/50 md:block">
+            {shortcutLabel}
+          </span>
+        )}
       </div>
     </div>
   )
