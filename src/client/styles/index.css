@@ -275,7 +275,8 @@ body {
 }
 
 .session-row.selected {
-  background: var(--bg-surface);
+  background: var(--bg-hover);
+  border-left: 2px solid var(--accent);
 }
 
 .shortcut-badge {

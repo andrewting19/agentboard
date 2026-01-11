@@ -607,7 +607,7 @@ export default function Terminal({
                   active:scale-95 transition-transform duration-75
                   select-none touch-manipulation
                   ${isActive
-                    ? 'bg-accent/20 text-accent border border-accent/40'
+                    ? 'bg-accent/30 text-accent border border-accent'
                     : 'bg-surface border border-border text-secondary'}
                 `}
                 onClick={() => {
