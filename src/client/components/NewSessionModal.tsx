@@ -73,7 +73,6 @@ export default function NewSessionModal({
   const [command, setCommand] = useState('')
   const [commandMode, setCommandMode] = useState<CommandMode>('claude')
   const formRef = useRef<HTMLFormElement>(null)
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!isOpen) {
@@ -81,17 +80,16 @@ export default function NewSessionModal({
       setName('')
       setCommand('')
       setCommandMode('claude')
-      // Restore focus to previously focused element after delay
-      // (allows terminal to settle before accepting input)
-      const prevElement = previouslyFocusedRef.current
-      previouslyFocusedRef.current = null
-      if (prevElement) {
-        setTimeout(() => prevElement.focus(), 300)
-      }
+      // Focus terminal after modal closes (with delay to let it settle)
+      setTimeout(() => {
+        const textarea = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
+        if (textarea) {
+          textarea.removeAttribute('disabled')
+          textarea.focus()
+        }
+      }, 300)
       return
     }
-    // Save currently focused element before modal takes focus
-    previouslyFocusedRef.current = document.activeElement as HTMLElement
     // Priority: active session -> last used -> default
     const basePath =
       activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
