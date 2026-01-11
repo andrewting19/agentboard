@@ -24,18 +24,21 @@ interface TerminalProps {
 const statusText: Record<Session['status'], string> = {
   working: 'Working',
   waiting: 'Waiting',
+  permission: 'Needs Input',
   unknown: 'Unknown',
 }
 
 const statusClass: Record<Session['status'], string> = {
   working: 'text-working',
   waiting: 'text-waiting',
+  permission: 'text-approval',
   unknown: 'text-muted',
 }
 
 const statusDot: Record<Session['status'], string> = {
   working: 'bg-working',
   waiting: 'bg-waiting',
+  permission: 'bg-approval',
   unknown: 'bg-muted',
 }
 

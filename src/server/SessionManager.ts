@@ -368,6 +368,11 @@ function inferStatus(
     return 'unknown'
   }
 
+  // Check for permission prompts first (takes priority over working/waiting)
+  if (detectsPermissionPrompt(content)) {
+    return 'permission'
+  }
+
   const cacheKey = tmuxWindow
   const previousContent = paneContentCache.get(cacheKey)
   paneContentCache.set(cacheKey, content)
@@ -412,4 +417,44 @@ function inferAgentType(command: string): AgentType | undefined {
   }
 
   return undefined
+}
+
+// Strip ANSI escape codes from terminal output
+function stripAnsi(text: string): string {
+  // Matches ANSI escape sequences: CSI sequences, OSC sequences, and simple escapes
+  return text.replace(
+    // eslint-disable-next-line no-control-regex -- need to match ANSI escapes
+    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+    ''
+  )
+}
+
+// Permission prompt patterns for Claude Code and Codex CLI
+const PERMISSION_PATTERNS: RegExp[] = [
+  // Claude Code: numbered options like "❯ 1. Yes" or "1. Yes"
+  /[❯>]?\s*1\.\s*(Yes|Allow)/i,
+  // Claude Code: "Do you want to proceed?" or similar
+  /do you want to (proceed|continue|allow|run)\?/i,
+  // Claude Code: "Yes, and don't ask again" style options
+  /yes,?\s*(and\s+)?(don't|do not|never)\s+ask\s+again/i,
+  // Claude Code: permission prompt with session option
+  /yes,?\s*(for|during)\s+this\s+session/i,
+  // Codex CLI: approve/reject inline prompts
+  /\[(approve|accept)\].*\[(reject|deny)\]/i,
+  // Codex CLI: "approve this" prompts
+  /approve\s+this\s+(command|change|action)/i,
+  // Generic: "allow" / "deny" choice pattern
+  /\[allow\].*\[deny\]/i,
+  // Generic: "y/n" or "[Y/n]" prompts at end of question
+  /\?\s*\[?[yY](es)?\/[nN](o)?\]?\s*$/m,
+]
+
+// Detects if terminal content shows a permission prompt
+export function detectsPermissionPrompt(content: string): boolean {
+  const cleaned = stripAnsi(content)
+  // Focus on the last ~30 lines where prompts typically appear
+  const lines = cleaned.split('\n')
+  const recentContent = lines.slice(-30).join('\n')
+
+  return PERMISSION_PATTERNS.some((pattern) => pattern.test(recentContent))
 }

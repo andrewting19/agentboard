@@ -5,9 +5,10 @@ import type {
 } from '../stores/settingsStore'
 
 const SESSION_STATUS_ORDER: Record<Session['status'], number> = {
-  waiting: 0,
-  working: 1,
-  unknown: 2,
+  permission: 0,
+  waiting: 1,
+  working: 2,
+  unknown: 3,
 }
 
 export interface SortOptions {

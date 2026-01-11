@@ -18,18 +18,21 @@ interface SessionListProps {
 const statusBarClass: Record<Session['status'], string> = {
   working: 'status-bar-working',
   waiting: 'status-bar-waiting',
+  permission: 'status-bar-approval pulse-approval',
   unknown: 'status-bar-waiting',
 }
 
 const statusLabel: Record<Session['status'], string> = {
   working: 'Working',
   waiting: 'Waiting',
+  permission: 'Needs Input',
   unknown: 'Unknown',
 }
 
 const statusTextClass: Record<Session['status'], string> = {
   working: 'text-working',
   waiting: 'text-waiting',
+  permission: 'text-approval',
   unknown: 'text-muted',
 }
 

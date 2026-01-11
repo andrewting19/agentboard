@@ -70,6 +70,7 @@ function triggerHaptic() {
 const statusDot: Record<Session['status'], string> = {
   working: 'bg-working',
   waiting: 'bg-waiting',
+  permission: 'bg-approval',
   unknown: 'bg-muted',
 }
 

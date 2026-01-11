@@ -1,4 +1,4 @@
-export type SessionStatus = 'working' | 'waiting' | 'unknown'
+export type SessionStatus = 'working' | 'waiting' | 'permission' | 'unknown'
 
 export type SessionSource = 'managed' | 'external'
 export type AgentType = 'claude' | 'codex'
