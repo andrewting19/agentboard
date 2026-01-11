@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { TerminalProxy } from '../TerminalProxy'
 
-console.log('DEBUG: Test file loaded, TerminalProxy:', typeof TerminalProxy, TerminalProxy)
-
 function createSpawnStub() {
   const calls: Array<{ args: string[]; options: Parameters<typeof Bun.spawn>[1] }> =
     []

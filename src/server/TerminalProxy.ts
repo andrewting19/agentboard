@@ -1,5 +1,3 @@
-console.log('DEBUG: TerminalProxy module loaded')
-
 interface TerminalCallbacks {
   onData: (data: string) => void
   onExit?: () => void
@@ -23,7 +21,6 @@ export class TerminalProxy {
     spawn?: SpawnFn
   ) {
     this.spawn = spawn ?? Bun.spawn
-    console.log('DEBUG TerminalProxy constructor: spawn param type:', typeof spawn, 'this.spawn type:', typeof this.spawn)
   }
 
   start(): void {
