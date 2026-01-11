@@ -6,4 +6,7 @@ export const config = {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean),
+  // TLS config - set both to enable HTTPS
+  tlsCert: process.env.TLS_CERT || '',
+  tlsKey: process.env.TLS_KEY || '',
 }

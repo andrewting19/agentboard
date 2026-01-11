@@ -7,7 +7,7 @@ const GAP = 6
 const PADDING = 8
 const INDICATOR_HEIGHT = 20 + GAP + 2
 const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * PADDING
-const PAD_HEIGHT = 4 * CELL_HEIGHT + 3 * GAP + 2 * PADDING + INDICATOR_HEIGHT
+const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * PADDING + INDICATOR_HEIGHT
 
 describe('NumPad helpers', () => {
   test('maps points to numbers', () => {
@@ -15,19 +15,21 @@ describe('NumPad helpers', () => {
     const padLeft = padPosition.x - PAD_WIDTH / 2
     const padTop = padPosition.y - PAD_HEIGHT / 2
 
-    const one = getNumAtPoint(
+    // Top-left cell is 7 (calculator-style layout)
+    const seven = getNumAtPoint(
       padLeft + PADDING + 1,
       padTop + PADDING + 1,
       padPosition
     )
-    expect(one).toBe('1')
+    expect(seven).toBe('7')
 
-    const zero = getNumAtPoint(
-      padLeft + PADDING + (CELL_WIDTH + GAP) * 1 + 1,
-      padTop + PADDING + (CELL_HEIGHT + GAP) * 3 + 1,
+    // Bottom-left cell is 1
+    const one = getNumAtPoint(
+      padLeft + PADDING + 1,
+      padTop + PADDING + (CELL_HEIGHT + GAP) * 2 + 1,
       padPosition
     )
-    expect(zero).toBe('0')
+    expect(one).toBe('1')
   })
 
   test('returns null for gaps and out of bounds', () => {

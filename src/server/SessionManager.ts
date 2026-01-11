@@ -9,6 +9,7 @@ interface WindowInfo {
   name: string
   path: string
   activity: number
+  creation: number
   command: string
 }
 
@@ -190,7 +191,7 @@ export class SessionManager {
       '-t',
       sessionName,
       '-F',
-      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{pane_start_command}',
+      '#{window_id}\t#{window_name}\t#{pane_current_path}\t#{window_activity}\t#{window_creation_time}\t#{pane_start_command}',
     ])
 
     return output
@@ -200,15 +201,20 @@ export class SessionManager {
       .map((line) => parseWindow(line))
       .map((window) => {
         const tmuxWindow = `${sessionName}:${window.id}`
+        const activityTimestamp = window.activity
+          ? window.activity * 1000
+          : this.now()
+        const creationTimestamp = window.creation
+          ? window.creation * 1000
+          : this.now()
         return {
           id: `${sessionName}:${window.id}`,
           name: window.name,
           tmuxWindow,
           projectPath: window.path,
           status: inferStatus(tmuxWindow, this.capturePaneContent),
-          lastActivity: new Date(
-            window.activity ? window.activity * 1000 : this.now()
-          ).toISOString(),
+          lastActivity: new Date(activityTimestamp).toISOString(),
+          createdAt: new Date(creationTimestamp).toISOString(),
           agentType: inferAgentType(window.command),
           source,
           command: window.command || undefined,
@@ -305,14 +311,17 @@ export class SessionManager {
 }
 
 function parseWindow(line: string): WindowInfo {
-  const [id, name, panePath, activityRaw, command] = line.split('\t')
+  const [id, name, panePath, activityRaw, creationRaw, command] =
+    line.split('\t')
   const activity = Number.parseInt(activityRaw || '0', 10)
+  const creation = Number.parseInt(creationRaw || '0', 10)
 
   return {
     id: id || '',
     name: name || 'unknown',
     path: panePath || '',
     activity: Number.isNaN(activity) ? 0 : activity,
+    creation: Number.isNaN(creation) ? 0 : creation,
     command: command || '',
   }
 }

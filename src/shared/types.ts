@@ -10,6 +10,7 @@ export interface Session {
   projectPath: string
   status: SessionStatus
   lastActivity: string
+  createdAt: string
   agentType?: AgentType
   source: SessionSource
   command?: string

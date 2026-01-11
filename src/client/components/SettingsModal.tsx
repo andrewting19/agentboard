@@ -3,6 +3,8 @@ import {
   DEFAULT_COMMAND,
   DEFAULT_PROJECT_DIR,
   useSettingsStore,
+  type SessionSortDirection,
+  type SessionSortMode,
 } from '../stores/settingsStore'
 
 interface SettingsModalProps {
@@ -20,16 +22,38 @@ export default function SettingsModal({
   )
   const defaultCommand = useSettingsStore((state) => state.defaultCommand)
   const setDefaultCommand = useSettingsStore((state) => state.setDefaultCommand)
+  const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
+  const setSessionSortMode = useSettingsStore(
+    (state) => state.setSessionSortMode
+  )
+  const sessionSortDirection = useSettingsStore(
+    (state) => state.sessionSortDirection
+  )
+  const setSessionSortDirection = useSettingsStore(
+    (state) => state.setSessionSortDirection
+  )
 
   const [draftDir, setDraftDir] = useState(defaultProjectDir)
   const [draftCommand, setDraftCommand] = useState(defaultCommand)
+  const [draftSortMode, setDraftSortMode] =
+    useState<SessionSortMode>(sessionSortMode)
+  const [draftSortDirection, setDraftSortDirection] =
+    useState<SessionSortDirection>(sessionSortDirection)
 
   useEffect(() => {
     if (isOpen) {
       setDraftDir(defaultProjectDir)
       setDraftCommand(defaultCommand)
+      setDraftSortMode(sessionSortMode)
+      setDraftSortDirection(sessionSortDirection)
     }
-  }, [defaultCommand, defaultProjectDir, isOpen])
+  }, [
+    defaultCommand,
+    defaultProjectDir,
+    sessionSortMode,
+    sessionSortDirection,
+    isOpen,
+  ])
 
   if (!isOpen) {
     return null
@@ -41,6 +65,8 @@ export default function SettingsModal({
     const trimmedCommand = draftCommand.trim()
     setDefaultProjectDir(trimmedDir || DEFAULT_PROJECT_DIR)
     setDefaultCommand(trimmedCommand || DEFAULT_COMMAND)
+    setSessionSortMode(draftSortMode)
+    setSessionSortDirection(draftSortDirection)
     onClose()
   }
 
@@ -87,6 +113,57 @@ export default function SettingsModal({
               className="input font-mono"
             />
           </div>
+
+          <div className="border-t border-border pt-4">
+            <label className="mb-2 block text-xs text-secondary">
+              Session List Order
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`btn flex-1 ${draftSortMode === 'created' ? 'btn-primary' : ''}`}
+                onClick={() => setDraftSortMode('created')}
+              >
+                Creation Date
+              </button>
+              <button
+                type="button"
+                className={`btn flex-1 ${draftSortMode === 'status' ? 'btn-primary' : ''}`}
+                onClick={() => setDraftSortMode('status')}
+              >
+                Status
+              </button>
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted">
+              {draftSortMode === 'status'
+                ? 'Sessions auto-resort by status (waiting, working, unknown)'
+                : 'Sessions stay in creation order'}
+            </p>
+          </div>
+
+          {draftSortMode === 'created' && (
+            <div>
+              <label className="mb-2 block text-xs text-secondary">
+                Sort Direction
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`btn flex-1 ${draftSortDirection === 'desc' ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSortDirection('desc')}
+                >
+                  Newest First
+                </button>
+                <button
+                  type="button"
+                  className={`btn flex-1 ${draftSortDirection === 'asc' ? 'btn-primary' : ''}`}
+                  onClick={() => setDraftSortDirection('asc')}
+                >
+                  Oldest First
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex justify-end gap-2">

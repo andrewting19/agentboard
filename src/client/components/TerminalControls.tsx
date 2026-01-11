@@ -238,29 +238,38 @@ export default function TerminalControls({
     <div className="terminal-controls flex flex-col gap-1.5 px-2 py-2.5 bg-elevated border-t border-border md:hidden">
       {/* Session switcher row */}
       {showSessionRow && (
-        <div className="flex items-center gap-1">
-          {sessions.slice(0, 6).map((session, index) => {
-            const isActive = session.id === currentSessionId
-            return (
-              <button
-                key={session.id}
-                type="button"
-                className={`
-                  terminal-key flex-1 flex items-center justify-center gap-1.5
-                  h-8 px-1 text-xs font-medium rounded-md
-                  active:scale-95 transition-transform duration-75
-                  select-none touch-manipulation
-                  ${isActive
-                    ? 'bg-accent/20 text-accent border border-accent/40'
-                    : 'bg-surface border border-border text-secondary'}
-                `}
-                onClick={() => handleSessionSelect(session.id)}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[session.status]}`} />
-                <span className="truncate">{index + 1}</span>
-              </button>
-            )
-          })}
+        <div className="relative -mx-2">
+          {/* Left fade indicator */}
+          <div className="absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-elevated to-transparent z-10 pointer-events-none" />
+          {/* Right fade indicator */}
+          <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
+          <div
+            className="flex items-center gap-1.5 px-3 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {sessions.map((session, index) => {
+              const isActive = session.id === currentSessionId
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={`
+                    terminal-key flex items-center justify-center gap-1.5 shrink-0 snap-start
+                    h-8 min-w-[3rem] px-2.5 text-xs font-medium rounded-md
+                    active:scale-95 transition-transform duration-75
+                    select-none touch-manipulation
+                    ${isActive
+                      ? 'bg-accent/20 text-accent border border-accent/40'
+                      : 'bg-surface border border-border text-secondary'}
+                  `}
+                  onClick={() => handleSessionSelect(session.id)}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[session.status]}`} />
+                  <span className="truncate">{index + 1}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
       {/* Key row */}

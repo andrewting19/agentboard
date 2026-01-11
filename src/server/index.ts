@@ -84,8 +84,16 @@ interface WSData {
 
 const sockets = new Set<ServerWebSocket<WSData>>()
 
+const tlsEnabled = config.tlsCert && config.tlsKey
+
 Bun.serve<WSData>({
   port: config.port,
+  ...(tlsEnabled && {
+    tls: {
+      cert: Bun.file(config.tlsCert),
+      key: Bun.file(config.tlsKey),
+    },
+  }),
   fetch(req, server) {
     const url = new URL(req.url)
     if (url.pathname === '/ws') {
@@ -112,7 +120,8 @@ Bun.serve<WSData>({
   },
 })
 
-console.log(`Agentboard server running on http://localhost:${config.port}`)
+const protocol = tlsEnabled ? 'https' : 'http'
+console.log(`Agentboard server running on ${protocol}://localhost:${config.port}`)
 
 // Cleanup all terminals on server shutdown
 function cleanupAllTerminals() {

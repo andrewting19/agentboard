@@ -27,9 +27,13 @@ export class SessionRegistry extends EventEmitter {
         existing?.lastActivity,
         session.lastActivity
       )
+      // Preserve createdAt from existing session, or use incoming/current time
+      const createdAt =
+        existing?.createdAt || session.createdAt || new Date().toISOString()
       nextMap.set(session.id, {
         ...session,
         lastActivity: nextLastActivity,
+        createdAt,
       })
     }
 

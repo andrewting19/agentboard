@@ -340,3 +340,13 @@ body {
 .ios-pwa .terminal-mobile-overlay {
   bottom: calc(var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
 }
+
+/* Hide scrollbar but allow scrolling */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

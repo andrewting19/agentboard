@@ -78,7 +78,19 @@ export default function App() {
     }
   }, [selectedSession?.projectPath, setLastProjectPath])
 
-  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions])
+  const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
+  const sessionSortDirection = useSettingsStore(
+    (state) => state.sessionSortDirection
+  )
+
+  const sortedSessions = useMemo(
+    () =>
+      sortSessions(sessions, {
+        mode: sessionSortMode,
+        direction: sessionSortDirection,
+      }),
+    [sessions, sessionSortMode, sessionSortDirection]
+  )
 
   const handleKillSession = useCallback((sessionId: string) => {
     sendMessage({ type: 'session-kill', sessionId })
@@ -88,12 +100,11 @@ export default function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (!(event.metaKey || event.ctrlKey)) return
-      if (event.altKey) return
 
       const key = event.key
 
       // Cmd+Shift+A: New session (Agent)
-      if (event.shiftKey && key.toLowerCase() === 'a') {
+      if (!event.altKey && event.shiftKey && key.toLowerCase() === 'a') {
         event.preventDefault()
         if (!isModalOpen) {
           setIsModalOpen(true)
@@ -102,7 +113,7 @@ export default function App() {
       }
 
       // Cmd+Shift+X: Kill current session
-      if (event.shiftKey && key.toLowerCase() === 'x') {
+      if (!event.altKey && event.shiftKey && key.toLowerCase() === 'x') {
         event.preventDefault()
         if (selectedSessionId && !isModalOpen) {
           handleKillSession(selectedSessionId)
@@ -128,7 +139,7 @@ export default function App() {
         }
       }
 
-      // Cmd+1-9: Switch sessions
+      // Cmd+1-9 or Cmd+Option+1-9: Switch sessions (Option variant for Safari compatibility)
       if (!/^[1-9]$/.test(key)) return
 
       const index = Number(key) - 1

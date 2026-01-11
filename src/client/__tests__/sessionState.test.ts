@@ -10,6 +10,7 @@ const baseSession: Session = {
   projectPath: '/Users/example/project',
   status: 'waiting',
   lastActivity: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+  createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
   source: 'managed',
 }
 
@@ -28,7 +29,7 @@ beforeEach(() => {
 })
 
 describe('sortSessions', () => {
-  test('orders by status then last activity', () => {
+  test('orders by status then last activity when mode is status', () => {
     const sessions = [
       makeSession({
         id: 'working',
@@ -52,12 +53,60 @@ describe('sortSessions', () => {
       }),
     ]
 
-    const sorted = sortSessions(sessions)
+    const sorted = sortSessions(sessions, { mode: 'status', direction: 'desc' })
     expect(sorted.map((session) => session.id)).toEqual([
       'waiting-newer',
       'waiting-older',
       'working',
       'unknown',
+    ])
+  })
+
+  test('orders by createdAt descending when mode is created with desc', () => {
+    const sessions = [
+      makeSession({
+        id: 'oldest',
+        createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'middle',
+        createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'newest',
+        createdAt: new Date('2024-01-03T00:00:00.000Z').toISOString(),
+      }),
+    ]
+
+    const sorted = sortSessions(sessions, { mode: 'created', direction: 'desc' })
+    expect(sorted.map((session) => session.id)).toEqual([
+      'newest',
+      'middle',
+      'oldest',
+    ])
+  })
+
+  test('orders by createdAt ascending when mode is created with asc', () => {
+    const sessions = [
+      makeSession({
+        id: 'newest',
+        createdAt: new Date('2024-01-03T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'oldest',
+        createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+      }),
+      makeSession({
+        id: 'middle',
+        createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+      }),
+    ]
+
+    const sorted = sortSessions(sessions, { mode: 'created', direction: 'asc' })
+    expect(sorted.map((session) => session.id)).toEqual([
+      'oldest',
+      'middle',
+      'newest',
     ])
   })
 })
@@ -66,22 +115,24 @@ describe('useSessionStore', () => {
   test('auto-selects a session when current selection is missing', () => {
     useSessionStore.setState({ selectedSessionId: 'missing' })
 
+    // With default 'created' + 'desc' mode, newest session is selected first
     const sessions = [
       makeSession({
-        id: 'waiting',
+        id: 'older',
         status: 'waiting',
-        lastActivity: new Date('2024-01-02T00:00:00.000Z').toISOString(),
+        createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
       }),
       makeSession({
-        id: 'working',
+        id: 'newer',
         status: 'working',
-        lastActivity: new Date('2024-01-03T00:00:00.000Z').toISOString(),
+        createdAt: new Date('2024-01-02T00:00:00.000Z').toISOString(),
       }),
     ]
 
     useSessionStore.getState().setSessions(sessions)
 
-    expect(useSessionStore.getState().selectedSessionId).toBe('waiting')
+    // Default sort is by createdAt desc, so 'newer' should be selected
+    expect(useSessionStore.getState().selectedSessionId).toBe('newer')
     expect(useSessionStore.getState().hasLoaded).toBe(true)
   })
 

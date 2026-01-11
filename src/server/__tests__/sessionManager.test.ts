@@ -11,6 +11,7 @@ interface WindowState {
   name: string
   path: string
   activity: number
+  creation?: number
   command: string
 }
 
@@ -61,7 +62,7 @@ function createTmuxRunner(sessions: SessionState[], baseIndex = 0) {
       return windows
         .map(
           (window) =>
-            `${window.id}\t${window.name}\t${window.path}\t${window.activity}\t${window.command}`
+            `${window.id}\t${window.name}\t${window.path}\t${window.activity}\t${window.creation ?? window.activity}\t${window.command}`
         )
         .join('\n')
     }

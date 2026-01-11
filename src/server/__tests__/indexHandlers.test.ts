@@ -161,6 +161,7 @@ const baseSession: Session = {
   projectPath: '/tmp/alpha',
   status: 'working',
   lastActivity: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
   source: 'managed',
 }
 

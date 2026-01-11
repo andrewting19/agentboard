@@ -4,6 +4,9 @@ import { persist } from 'zustand/middleware'
 const DEFAULT_PROJECT_DIR = '~/Documents/GitHub'
 const DEFAULT_COMMAND = 'claude'
 
+export type SessionSortMode = 'status' | 'created'
+export type SessionSortDirection = 'asc' | 'desc'
+
 interface SettingsState {
   defaultProjectDir: string
   setDefaultProjectDir: (dir: string) => void
@@ -11,6 +14,10 @@ interface SettingsState {
   setDefaultCommand: (cmd: string) => void
   lastProjectPath: string | null
   setLastProjectPath: (path: string) => void
+  sessionSortMode: SessionSortMode
+  setSessionSortMode: (mode: SessionSortMode) => void
+  sessionSortDirection: SessionSortDirection
+  setSessionSortDirection: (direction: SessionSortDirection) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -22,6 +29,11 @@ export const useSettingsStore = create<SettingsState>()(
       setDefaultCommand: (cmd) => set({ defaultCommand: cmd }),
       lastProjectPath: null,
       setLastProjectPath: (path) => set({ lastProjectPath: path }),
+      sessionSortMode: 'created',
+      setSessionSortMode: (mode) => set({ sessionSortMode: mode }),
+      sessionSortDirection: 'desc',
+      setSessionSortDirection: (direction) =>
+        set({ sessionSortDirection: direction }),
     }),
     { name: 'agentboard-settings' }
   )

@@ -9,6 +9,7 @@ const baseSession: Session = {
   projectPath: '/Users/example/project',
   status: 'unknown',
   lastActivity: new Date(0).toISOString(),
+  createdAt: new Date(0).toISOString(),
   source: 'managed',
 }
 

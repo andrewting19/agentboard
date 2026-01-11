@@ -24,7 +24,7 @@ const PADDING = 8 // p-2 = 0.5rem = 8px
 // Total pad dimensions (including indicator text)
 const INDICATOR_HEIGHT = 20 + GAP + 2 // h-5 (20px) + marginTop
 const PAD_WIDTH = 3 * CELL_WIDTH + 2 * GAP + 2 * PADDING // 184px
-const PAD_HEIGHT = 4 * CELL_HEIGHT + 3 * GAP + 2 * PADDING + INDICATOR_HEIGHT // ~254px
+const PAD_HEIGHT = 3 * CELL_HEIGHT + 2 * GAP + 2 * PADDING + INDICATOR_HEIGHT // ~200px
 
 function triggerHaptic(intensity: number = 10) {
   if ('vibrate' in navigator) {
@@ -32,12 +32,11 @@ function triggerHaptic(intensity: number = 10) {
   }
 }
 
-// NumPad layout: 3x3 + bottom row with 0
+// NumPad layout: calculator-style (7-8-9 at top, 1-2-3 at bottom)
 const NUM_LAYOUT = [
-  ['1', '2', '3'],
-  ['4', '5', '6'],
   ['7', '8', '9'],
-  ['', '0', ''],
+  ['4', '5', '6'],
+  ['1', '2', '3'],
 ]
 
 export function getNumAtPoint(
@@ -54,7 +53,7 @@ export function getNumAtPoint(
 
   // Check if within grid bounds
   const gridWidth = 3 * CELL_WIDTH + 2 * GAP
-  const gridHeight = 4 * CELL_HEIGHT + 3 * GAP
+  const gridHeight = 3 * CELL_HEIGHT + 2 * GAP
 
   if (relX < 0 || relX > gridWidth || relY < 0 || relY > gridHeight) {
     return null
@@ -62,11 +61,11 @@ export function getNumAtPoint(
 
   // Calculate column (0-2)
   const col = Math.floor(relX / (CELL_WIDTH + GAP))
-  // Calculate row (0-3)
+  // Calculate row (0-2)
   const row = Math.floor(relY / (CELL_HEIGHT + GAP))
 
   // Clamp to valid range
-  if (col < 0 || col > 2 || row < 0 || row > 3) {
+  if (col < 0 || col > 2 || row < 0 || row > 2) {
     return null
   }
 

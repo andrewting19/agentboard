@@ -1,4 +1,8 @@
 import type { Session } from '@shared/types'
+import type {
+  SessionSortDirection,
+  SessionSortMode,
+} from '../stores/settingsStore'
 
 const SESSION_STATUS_ORDER: Record<Session['status'], number> = {
   waiting: 0,
@@ -6,11 +10,36 @@ const SESSION_STATUS_ORDER: Record<Session['status'], number> = {
   unknown: 2,
 }
 
-export function sortSessions(sessions: Session[]): Session[] {
+export interface SortOptions {
+  mode: SessionSortMode
+  direction: SessionSortDirection
+}
+
+const DEFAULT_SORT_OPTIONS: SortOptions = {
+  mode: 'created',
+  direction: 'desc',
+}
+
+export function sortSessions(
+  sessions: Session[],
+  options: SortOptions = DEFAULT_SORT_OPTIONS
+): Session[] {
+  const { mode, direction } = options
+
   return [...sessions].sort((a, b) => {
-    const aOrder = SESSION_STATUS_ORDER[a.status] ?? SESSION_STATUS_ORDER.unknown
-    const bOrder = SESSION_STATUS_ORDER[b.status] ?? SESSION_STATUS_ORDER.unknown
-    if (aOrder !== bOrder) return aOrder - bOrder
-    return Date.parse(b.lastActivity) - Date.parse(a.lastActivity)
+    if (mode === 'status') {
+      // Sort by status priority, then by lastActivity descending
+      const aOrder =
+        SESSION_STATUS_ORDER[a.status] ?? SESSION_STATUS_ORDER.unknown
+      const bOrder =
+        SESSION_STATUS_ORDER[b.status] ?? SESSION_STATUS_ORDER.unknown
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return Date.parse(b.lastActivity) - Date.parse(a.lastActivity)
+    }
+
+    // Sort by createdAt timestamp
+    const aTime = Date.parse(a.createdAt)
+    const bTime = Date.parse(b.createdAt)
+    return direction === 'desc' ? bTime - aTime : aTime - bTime
   })
 }

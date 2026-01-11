@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
+import { useSettingsStore } from './settingsStore'
 
 export type ConnectionStatus =
   | 'connecting'
@@ -36,7 +37,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       !sessions.some((session) => session.id === selected)
     ) {
       // Auto-select first session (by sort order) when current one is deleted
-      const sorted = sortSessions(sessions)
+      const { sessionSortMode, sessionSortDirection } =
+        useSettingsStore.getState()
+      const sorted = sortSessions(sessions, {
+        mode: sessionSortMode,
+        direction: sessionSortDirection,
+      })
       newSelectedId = sorted[0]?.id ?? null
     }
     set({

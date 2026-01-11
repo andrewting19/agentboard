@@ -594,32 +594,41 @@ export default function Terminal({
 
       {/* Mobile session switcher - top of terminal */}
       {session && sessions.length > 1 && (
-        <div className="flex items-center gap-1 px-2 py-1.5 bg-elevated border-b border-border md:hidden">
-          {sessions.slice(0, 6).map((s, index) => {
-            const isActive = s.id === session.id
-            return (
-              <button
-                key={s.id}
-                type="button"
-                className={`
-                  flex-1 flex items-center justify-center gap-1.5
-                  h-8 px-1 text-xs font-medium rounded-md
-                  active:scale-95 transition-transform duration-75
-                  select-none touch-manipulation
-                  ${isActive
-                    ? 'bg-accent/30 text-accent border border-accent'
-                    : 'bg-surface border border-border text-secondary'}
-                `}
-                onClick={() => {
-                  triggerHaptic()
-                  onSelectSession(s.id)
-                }}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[s.status]}`} />
-                <span className="truncate">{index + 1}</span>
-              </button>
-            )
-          })}
+        <div className="relative bg-elevated border-b border-border md:hidden">
+          {/* Left fade indicator */}
+          <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-elevated to-transparent z-10 pointer-events-none" />
+          {/* Right fade indicator */}
+          <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {sessions.map((s, index) => {
+              const isActive = s.id === session.id
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`
+                    flex items-center justify-center gap-1.5 shrink-0 snap-start
+                    h-8 min-w-[3rem] px-2.5 text-xs font-medium rounded-md
+                    active:scale-95 transition-transform duration-75
+                    select-none touch-manipulation
+                    ${isActive
+                      ? 'bg-accent/30 text-accent border border-accent'
+                      : 'bg-surface border border-border text-secondary'}
+                  `}
+                  onClick={() => {
+                    triggerHaptic()
+                    onSelectSession(s.id)
+                  }}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot[s.status]}`} />
+                  <span className="truncate">{index + 1}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
