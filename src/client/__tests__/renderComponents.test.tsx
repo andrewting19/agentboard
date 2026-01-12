@@ -92,7 +92,7 @@ describe('component rendering', () => {
 
   test('renders header', () => {
     const html = renderToString(
-      <Header connectionStatus="connected" onNewSession={() => {}} />
+      <Header connectionStatus="connected" onNewSession={() => {}} tailscaleIp={null} />
     )
     expect(html).toContain('AGENTBOARD')
   })

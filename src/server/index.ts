@@ -23,6 +23,30 @@ function checkPortAvailable(port: number): void {
   }
 }
 
+function getTailscaleIp(): string | null {
+  // Try common Tailscale CLI paths (standalone CLI, then Mac App Store bundle)
+  const tailscalePaths = [
+    'tailscale',
+    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+  ]
+
+  for (const tsPath of tailscalePaths) {
+    try {
+      const result = Bun.spawnSync([tsPath, 'ip', '-4'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      if (result.exitCode === 0) {
+        const ip = result.stdout.toString().trim()
+        if (ip) return ip
+      }
+    } catch {
+      // Try next path
+    }
+  }
+  return null
+}
+
 checkPortAvailable(config.port)
 ensureTmux()
 
@@ -48,6 +72,15 @@ registry.on('sessions', (sessions) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
+
+app.get('/api/server-info', (c) => {
+  const tailscaleIp = getTailscaleIp()
+  return c.json({
+    port: config.port,
+    tailscaleIp,
+    protocol: tlsEnabled ? 'https' : 'http',
+  })
+})
 
 // Image upload endpoint for iOS clipboard paste
 app.post('/api/paste-image', async (c) => {

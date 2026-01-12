@@ -23,7 +23,7 @@ describe('Header', () => {
 
     let created = 0
     const renderer = TestRenderer.create(
-      <Header connectionStatus="connected" onNewSession={() => { created += 1 }} />
+      <Header connectionStatus="connected" onNewSession={() => { created += 1 }} tailscaleIp={null} />
     )
 
     const statusDot = renderer.root.findAllByType('span').find((node) =>
@@ -51,7 +51,7 @@ describe('Header', () => {
 
   test('shows error status styling', () => {
     const renderer = TestRenderer.create(
-      <Header connectionStatus="error" onNewSession={() => {}} />
+      <Header connectionStatus="error" onNewSession={() => {}} tailscaleIp={null} />
     )
 
     const statusDot = renderer.root.findAllByType('span').find((node) =>
@@ -63,6 +63,39 @@ describe('Header', () => {
     }
 
     expect(statusDot.props.className).toContain('bg-danger')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('displays tailscale IP when provided', () => {
+    const renderer = TestRenderer.create(
+      <Header connectionStatus="connected" onNewSession={() => {}} tailscaleIp="100.64.1.2" />
+    )
+
+    const buttons = renderer.root.findAllByType('button')
+    const ipButton = buttons.find((node) =>
+      node.children.includes('100.64.1.2')
+    )
+    expect(ipButton).toBeDefined()
+    expect(ipButton?.props.title).toBe('Tailscale IP - click to copy remote access URL')
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('does not display tailscale IP when null', () => {
+    const renderer = TestRenderer.create(
+      <Header connectionStatus="connected" onNewSession={() => {}} tailscaleIp={null} />
+    )
+
+    const spans = renderer.root.findAllByType('span')
+    const ipSpan = spans.find((node) =>
+      Array.isArray(node.children) && node.children.some((c) => typeof c === 'string' && c.includes('100.'))
+    )
+    expect(ipSpan).toBeUndefined()
 
     act(() => {
       renderer.unmount()

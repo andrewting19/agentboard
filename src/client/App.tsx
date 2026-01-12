@@ -12,10 +12,17 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
 
+interface ServerInfo {
+  port: number
+  tailscaleIp: string | null
+  protocol: string
+}
+
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
 
   const sessions = useSessionStore((state) => state.sessions)
   const selectedSessionId = useSessionStore(
@@ -166,6 +173,14 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
+  // Fetch server info (including Tailscale IP) on mount
+  useEffect(() => {
+    fetch('/api/server-info')
+      .then((res) => res.json())
+      .then((info: ServerInfo) => setServerInfo(info))
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left column: header + sidebar - hidden on mobile when session selected */}
@@ -173,6 +188,7 @@ export default function App() {
         <Header
           connectionStatus={connectionStatus}
           onNewSession={handleNewSession}
+          tailscaleIp={serverInfo?.tailscaleIp ?? null}
         />
         <SessionList
           sessions={sessions}
