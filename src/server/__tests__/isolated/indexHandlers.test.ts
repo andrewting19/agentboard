@@ -165,7 +165,6 @@ mock.module('../../config', () => ({
     port: 4040,
     refreshIntervalMs: 1000,
     tmuxSession: 'agentboard',
-    persistentClient: true,
     discoverPrefixes: [],
     tlsCert: '',
     tlsKey: '',
@@ -207,7 +206,6 @@ function createWs() {
   const sent: ServerMessage[] = []
   const ws = {
     data: {
-      terminals: new Map<string, TerminalProxyMock>(),
       terminal: null as TerminalProxyMock | null,
       currentSessionId: null as string | null,
       connectionId: 'ws-test',

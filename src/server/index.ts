@@ -7,7 +7,6 @@ import { config } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
-import { LegacyTerminalProxy } from './LegacyTerminalProxy'
 import { TerminalProxy, TerminalProxyError } from './TerminalProxy'
 import { resolveProjectPath } from './paths'
 import type {
@@ -283,7 +282,6 @@ app.post('/api/paste-image', async (c) => {
 app.use('/*', serveStatic({ root: './dist/client' }))
 
 interface WSData {
-  terminals: Map<string, LegacyTerminalProxy>
   terminal: TerminalProxy | null
   currentSessionId: string | null
   connectionId: string
@@ -307,7 +305,6 @@ Bun.serve<WSData>({
       if (
         server.upgrade(req, {
           data: {
-            terminals: new Map(),
             terminal: null,
             currentSessionId: null,
             connectionId: createConnectionId(),
@@ -325,9 +322,7 @@ Bun.serve<WSData>({
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
-      if (config.persistentClient) {
-        initializePersistentTerminal(ws)
-      }
+      initializePersistentTerminal(ws)
     },
     message(ws, message) {
       handleMessage(ws, message)
@@ -360,19 +355,11 @@ process.on('SIGTERM', () => {
 })
 
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
-  if (config.persistentClient) {
-    if (ws.data.terminal) {
-      void ws.data.terminal.dispose()
-      ws.data.terminal = null
-    }
-    ws.data.currentSessionId = null
-    return
+  if (ws.data.terminal) {
+    void ws.data.terminal.dispose()
+    ws.data.terminal = null
   }
-
-  for (const terminal of ws.data.terminals.values()) {
-    terminal.dispose()
-  }
-  ws.data.terminals.clear()
+  ws.data.currentSessionId = null
 }
 
 function broadcast(message: ServerMessage) {
@@ -431,39 +418,21 @@ function handleMessage(
       handleRename(message.sessionId, message.newName, ws)
       return
     case 'terminal-attach':
-      if (config.persistentClient) {
-        void attachTerminalPersistent(ws, message)
-      } else {
-        attachTerminalLegacy(ws, message.sessionId)
-      }
+      void attachTerminalPersistent(ws, message)
       return
     case 'terminal-detach':
-      if (config.persistentClient) {
-        detachTerminalPersistent(ws, message.sessionId)
-      } else {
-        detachTerminalLegacy(ws, message.sessionId)
-      }
+      detachTerminalPersistent(ws, message.sessionId)
       return
     case 'terminal-input':
-      if (config.persistentClient) {
-        handleTerminalInputPersistent(ws, message.sessionId, message.data)
-      } else {
-        ws.data.terminals.get(message.sessionId)?.write(message.data)
-      }
+      handleTerminalInputPersistent(ws, message.sessionId, message.data)
       return
     case 'terminal-resize':
-      if (config.persistentClient) {
-        handleTerminalResizePersistent(
-          ws,
-          message.sessionId,
-          message.cols,
-          message.rows
-        )
-      } else {
-        ws.data.terminals
-          .get(message.sessionId)
-          ?.resize(message.cols, message.rows)
-      }
+      handleTerminalResizePersistent(
+        ws,
+        message.sessionId,
+        message.cols,
+        message.rows
+      )
       return
     case 'tmux-cancel-copy-mode':
       // Exit tmux copy-mode when user starts typing after scrolling
@@ -533,42 +502,6 @@ function handleRename(
         error instanceof Error ? error.message : 'Unable to rename session',
     })
   }
-}
-
-function attachTerminalLegacy(ws: ServerWebSocket<WSData>, sessionId: string) {
-  const session = registry.get(sessionId)
-  if (!session) {
-    send(ws, { type: 'error', message: 'Session not found' })
-    return
-  }
-
-  // Detach ALL existing terminals first - only one terminal at a time
-  for (const [existingId, terminal] of ws.data.terminals) {
-    terminal.dispose()
-    ws.data.terminals.delete(existingId)
-  }
-
-  const terminal = new LegacyTerminalProxy(session.tmuxWindow, {
-    onData: (data) => {
-      send(ws, { type: 'terminal-output', sessionId, data })
-    },
-    onExit: () => {
-      detachTerminalLegacy(ws, sessionId)
-    },
-  })
-
-  terminal.start()
-  ws.data.terminals.set(sessionId, terminal)
-}
-
-function detachTerminalLegacy(ws: ServerWebSocket<WSData>, sessionId: string) {
-  const terminal = ws.data.terminals.get(sessionId)
-  if (!terminal) {
-    return
-  }
-
-  terminal.dispose()
-  ws.data.terminals.delete(sessionId)
 }
 
 function initializePersistentTerminal(ws: ServerWebSocket<WSData>) {
