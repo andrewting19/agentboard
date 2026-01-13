@@ -18,7 +18,7 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 
 ## Requirements
 
-- Bun 1.3+
+- **Bun 1.3.6+** (required - see [Troubleshooting](#troubleshooting))
 - tmux
 - A network path to your machine (Tailscale, LAN, etc.)
 
@@ -66,3 +66,15 @@ TERMINAL_MONITOR_TARGETS=true
 `PRUNE_WS_SESSIONS` removes orphaned `agentboard-ws-*` tmux sessions on startup (set to `false` to disable).
 `TERMINAL_MODE` selects terminal I/O strategy: `pty` (default, grouped session) or `pipe-pane` (PTY-less, works in daemon/systemd/docker without `-t`).
 `TERMINAL_MONITOR_TARGETS` (pipe-pane only) polls tmux to detect closed targets (set to `false` to disable).
+
+## Troubleshooting
+
+### "open terminal failed: not a terminal" errors
+
+If you see infinite `open terminal failed: not a terminal` errors, you need to upgrade Bun:
+
+```bash
+bun upgrade
+```
+
+**Root cause**: Bun versions prior to 1.3.6 had a bug where the `terminal` option in `Bun.spawn()` incorrectly set stdin to `/dev/null` instead of the PTY. Since `tmux attach` requires stdin to be a terminal, it fails immediately. This was fixed in Bun 1.3.6.
