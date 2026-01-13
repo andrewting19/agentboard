@@ -222,12 +222,16 @@ body {
   -webkit-user-select: text;
   user-select: text;
   white-space: pre;
+  font-family: inherit;
   font-size: var(--xterm-font-size, 13px);
   line-height: var(--xterm-cell-height, 18px);
+  letter-spacing: var(--xterm-a11y-letter-spacing, 0px);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  transform: translateY(var(--xterm-a11y-offset, 0px));
-  transform-origin: top left;
+  /* Disable font shaping that can change glyph advances */
+  font-variant-ligatures: none;
+  font-kerning: none;
+  /* No transforms - WebKit selection ignores them */
 }
 
 .ios-native-term-selection .xterm .xterm-accessibility-tree > div {
@@ -286,6 +290,10 @@ body {
 }
 
 .session-row.selected {
+  background: var(--bg-surface);
+}
+
+.session-row.selected:hover {
   background: var(--bg-hover);
 }
 
