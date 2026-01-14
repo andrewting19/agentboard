@@ -57,6 +57,7 @@ interface ITerminalProxy {
   getCurrentWindow(): string | null
   getSessionName(): string
   getMode(): 'pty' | 'pipe-pane'
+  refresh(): void
 }
 
 export type {

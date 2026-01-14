@@ -259,6 +259,19 @@ class PtyTerminalProxy extends TerminalProxyBase {
       true
     )
   }
+
+  /**
+   * Force tmux to refresh/redraw the client.
+   * Used to fix ghost content from scroll-up operations.
+   */
+  refresh(): void {
+    if (!this.clientTty) return
+    try {
+      this.runTmux(['refresh-client', '-t', this.clientTty])
+    } catch {
+      // Ignore refresh failures
+    }
+  }
 }
 
 export { PtyTerminalProxy }

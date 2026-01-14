@@ -142,6 +142,7 @@ export function useTerminal({
   // Wheel event handling for tmux scrollback
   const wheelAccumRef = useRef<number>(0)
   const inTmuxCopyModeRef = useRef<boolean>(false)
+  const scrollRefreshTimerRef = useRef<number | null>(null)
 
   // Track the currently attached session to prevent race conditions
   const attachedSessionRef = useRef<string | null>(null)
@@ -413,17 +414,35 @@ export function useTerminal({
       const col = Math.floor(cols / 2)
       const row = Math.floor(rows / 2)
 
+      let scrolledUp = false
       while (Math.abs(wheelAccumRef.current) >= STEP) {
         const down = wheelAccumRef.current > 0
         wheelAccumRef.current += down ? -STEP : STEP
 
         // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
         const button = down ? 65 : 64
+        if (!down) scrolledUp = true
         sendMessageRef.current({
           type: 'terminal-input',
           sessionId: attached,
           data: `\x1b[<${button};${col};${row}M`
         })
+      }
+
+      // After scroll-up, request tmux to refresh the pane after a short delay.
+      // This fixes ghost content caused by xterm.js not properly handling
+      // scroll region + insert-line commands that tmux uses for scroll-up.
+      if (scrolledUp) {
+        if (scrollRefreshTimerRef.current !== null) {
+          window.clearTimeout(scrollRefreshTimerRef.current)
+        }
+        scrollRefreshTimerRef.current = window.setTimeout(() => {
+          scrollRefreshTimerRef.current = null
+          sendMessageRef.current({
+            type: 'tmux-refresh-pane',
+            sessionId: attached
+          })
+        }, 150) // Debounce: wait for scroll to settle
       }
 
       setTmuxCopyMode(true)
@@ -486,6 +505,9 @@ export function useTerminal({
       progressAddonRef.current = null
       if (fitTimer.current) {
         window.clearTimeout(fitTimer.current)
+      }
+      if (scrollRefreshTimerRef.current) {
+        window.clearTimeout(scrollRefreshTimerRef.current)
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

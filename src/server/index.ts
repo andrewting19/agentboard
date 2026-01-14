@@ -519,6 +519,10 @@ function handleMessage(
       // Exit tmux copy-mode when user starts typing after scrolling
       handleCancelCopyMode(message.sessionId)
       return
+    case 'tmux-refresh-pane':
+      // Force tmux to redraw the pane - fixes ghost content from scroll-up
+      ws.data.terminal?.refresh()
+      return
     default:
       send(ws, { type: 'error', message: 'Unknown message type' })
   }

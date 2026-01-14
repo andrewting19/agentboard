@@ -128,6 +128,14 @@ abstract class TerminalProxyBase implements ITerminalProxy {
   abstract dispose(): Promise<void>
   abstract getClientTty(): string | null
   abstract getMode(): 'pty' | 'pipe-pane'
+
+  /**
+   * Force tmux to refresh/redraw the client.
+   * Default implementation does nothing; subclasses can override.
+   */
+  refresh(): void {
+    // Default: no-op
+  }
 }
 
 function extractWindowId(target: string): string {

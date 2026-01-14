@@ -72,3 +72,4 @@ export type ClientMessage =
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
+  | { type: 'tmux-refresh-pane'; sessionId: string }
