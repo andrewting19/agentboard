@@ -1,20 +1,23 @@
 import { useState, useRef, useEffect, useReducer } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { HandIcon } from '@untitledui-icons/react/line'
-import type { Session } from '@shared/types'
+import type { AgentSession, Session } from '@shared/types'
 import { sortSessions } from '../utils/sessions'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getEffectiveModifier, getModifierDisplay } from '../utils/device'
 import AgentIcon from './AgentIcon'
+import InactiveSessionItem from './InactiveSessionItem'
 
 interface SessionListProps {
   sessions: Session[]
+  inactiveSessions?: AgentSession[]
   selectedSessionId: string | null
   loading: boolean
   error: string | null
   onSelect: (sessionId: string) => void
   onRename: (sessionId: string, newName: string) => void
+  onResume?: (sessionId: string) => void
 }
 
 const statusBarClass: Record<Session['status'], string> = {
@@ -35,14 +38,17 @@ function useTimestampRefresh() {
 
 export default function SessionList({
   sessions,
+  inactiveSessions = [],
   selectedSessionId,
   loading,
   error,
   onSelect,
   onRename,
+  onResume,
 }: SessionListProps) {
   useTimestampRefresh()
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [showInactive, setShowInactive] = useState(true)
   const prefersReducedMotion = useReducedMotion()
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const modDisplay = getModifierDisplay(getEffectiveModifier(shortcutModifier))
@@ -118,6 +124,35 @@ export default function SessionList({
             </AnimatePresence>
           </div>
         )}
+
+        {inactiveSessions.length > 0 && (
+          <div className="border-t border-border">
+            <button
+              type="button"
+              onClick={() => setShowInactive((value) => !value)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted hover:text-primary"
+            >
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-border text-[10px]">
+                  {showInactive ? 'v' : '>'}
+                </span>
+                Inactive Sessions
+              </span>
+              <span className="text-xs">{inactiveSessions.length}</span>
+            </button>
+            {showInactive && (
+              <div className="py-1">
+                {inactiveSessions.map((session) => (
+                  <InactiveSessionItem
+                    key={session.sessionId}
+                    session={session}
+                    onResume={(sessionId) => onResume?.(sessionId)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Keyboard shortcuts hint */}
@@ -153,7 +188,8 @@ function SessionRow({
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
-  const [editValue, setEditValue] = useState(session.name)
+  const displayName = session.agentSessionName || session.name
+  const [editValue, setEditValue] = useState(displayName)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const directoryLeaf = getPathLeaf(session.projectPath)
   const needsInput = session.status === 'permission'
@@ -166,18 +202,19 @@ function SessionRow({
     const prevStatus = prevStatusRef.current
     const currentStatus = session.status
 
-    // Always update ref first
-    prevStatusRef.current = currentStatus
-
     // Detect transition from working → waiting (not permission, which needs immediate attention)
     if (prevStatus === 'working' && currentStatus === 'waiting') {
       setIsPulsingComplete(true)
-      const timer = setTimeout(() => {
-        setIsPulsingComplete(false)
-      }, 5000)
-      return () => clearTimeout(timer)
+      // Don't update ref yet - will update when animation ends
+    } else {
+      prevStatusRef.current = currentStatus
     }
   }, [session.status])
+
+  const handlePulseAnimationEnd = () => {
+    setIsPulsingComplete(false)
+    prevStatusRef.current = session.status
+  }
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -187,12 +224,12 @@ function SessionRow({
   }, [isEditing])
 
   useEffect(() => {
-    setEditValue(session.name)
-  }, [session.name])
+    setEditValue(displayName)
+  }, [displayName])
 
   const handleSubmit = () => {
     const trimmed = editValue.trim()
-    if (trimmed && trimmed !== session.name) {
+    if (trimmed && trimmed !== displayName) {
       onRename(trimmed)
     } else {
       onCancelEdit()
@@ -205,7 +242,7 @@ function SessionRow({
       handleSubmit()
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      setEditValue(session.name)
+      setEditValue(displayName)
       onCancelEdit()
     }
   }
@@ -238,12 +275,19 @@ function SessionRow({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
-      <div className={`status-bar ${statusBarClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`} />
+      <div
+        className={`status-bar ${statusBarClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
+        onAnimationEnd={handlePulseAnimationEnd}
+      />
 
       <div className="flex flex-col gap-0.5 pl-2.5">
         {/* Line 1: Icon + Name + Time/Hand */}
         <div className="flex items-center gap-2">
-          <AgentIcon session={session} className="h-3.5 w-3.5 shrink-0 text-muted" />
+          <AgentIcon
+            agentType={session.agentType}
+            command={session.command}
+            className="h-3.5 w-3.5 shrink-0 text-muted"
+          />
           {isEditing ? (
             <input
               ref={inputRef}
@@ -257,7 +301,7 @@ function SessionRow({
             />
           ) : (
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
-              {session.name}
+              {displayName}
             </span>
           )}
           {needsInput ? (
