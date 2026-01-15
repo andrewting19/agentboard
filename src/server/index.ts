@@ -7,6 +7,9 @@ import { config } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
+import { initDatabase } from './db'
+import { LogPoller } from './logPoller'
+import { toAgentSession } from './agentSessions'
 import {
   createTerminalProxy,
   resolveTerminalMode,
@@ -20,6 +23,9 @@ import type {
   TerminalErrorCode,
   DirectoryListing,
   DirectoryErrorResponse,
+  AgentSession,
+  ResumeError,
+  Session,
 } from '../shared/types'
 import { logger } from './logger'
 
@@ -161,14 +167,198 @@ logger.info('terminal_mode_resolved', {
 const app = new Hono()
 const sessionManager = new SessionManager()
 const registry = new SessionRegistry()
+const db = initDatabase()
+const logPoller = new LogPoller(db, registry, {
+  onSessionOrphaned: (sessionId) => {
+    const session = db.getSessionById(sessionId)
+    if (session) {
+      broadcast({ type: 'session-orphaned', session: toAgentSession(session) })
+    }
+  },
+  onSessionActivated: (sessionId, window) => {
+    const session = db.getSessionById(sessionId)
+    if (session) {
+      broadcast({
+        type: 'session-activated',
+        session: toAgentSession(session),
+        window,
+      })
+    }
+  },
+  maxLogsPerPoll: config.logPollMax,
+  rgThreads: config.rgThreads,
+  matchProfile: config.logMatchProfile,
+  matchWorker: config.logMatchWorker,
+})
+
+interface WSData {
+  terminal: ITerminalProxy | null
+  currentSessionId: string | null
+  connectionId: string
+}
+
+const sockets = new Set<ServerWebSocket<WSData>>()
+
+function updateAgentSessions() {
+  const active = db.getActiveSessions().map(toAgentSession)
+  const inactive = db.getInactiveSessions().map(toAgentSession)
+  registry.setAgentSessions(active, inactive)
+}
+
+function hydrateSessionsWithAgentSessions(sessions: Session[]): Session[] {
+  const activeSessions = db.getActiveSessions()
+  const windowSet = new Set(sessions.map((session) => session.tmuxWindow))
+  const activeMap = new Map<string, typeof activeSessions[number]>()
+  const orphaned: AgentSession[] = []
+
+  // Safeguard: don't mass-orphan if window list seems incomplete
+  // This can happen if tmux commands fail temporarily on server restart
+  const wouldOrphanCount = activeSessions.filter(
+    (s) => s.currentWindow && !windowSet.has(s.currentWindow)
+  ).length
+  if (wouldOrphanCount > 0 && wouldOrphanCount === activeSessions.length) {
+    logger.warn('hydrate_would_orphan_all', {
+      activeSessionCount: activeSessions.length,
+      windowCount: windowSet.size,
+      wouldOrphanCount,
+      message: 'Would orphan ALL active sessions - skipping to prevent data loss',
+    })
+    return sessions
+  }
+
+  for (const agentSession of activeSessions) {
+    if (!agentSession.currentWindow || !windowSet.has(agentSession.currentWindow)) {
+      logger.info('session_orphaned', {
+        sessionId: agentSession.sessionId,
+        displayName: agentSession.displayName,
+        currentWindow: agentSession.currentWindow,
+        windowSetSize: windowSet.size,
+        windowSetSample: Array.from(windowSet).slice(0, 5),
+      })
+      const orphanedSession = db.orphanSession(agentSession.sessionId)
+      if (orphanedSession) {
+        orphaned.push(toAgentSession(orphanedSession))
+      }
+      continue
+    }
+    activeMap.set(agentSession.currentWindow, agentSession)
+  }
+
+  const hydrated = sessions.map((session) => {
+    const agentSession = activeMap.get(session.tmuxWindow)
+    if (!agentSession) {
+      return session
+    }
+    if (agentSession.displayName !== session.name) {
+      db.updateSession(agentSession.sessionId, { displayName: session.name })
+      agentSession.displayName = session.name
+    }
+    return {
+      ...session,
+      // Use log-based agentType if command-based detection failed
+      agentType: session.agentType ?? agentSession.agentType,
+      agentSessionId: agentSession.sessionId,
+      agentSessionName: agentSession.displayName,
+    }
+  })
+
+  if (orphaned.length > 0) {
+    for (const session of orphaned) {
+      broadcast({ type: 'session-orphaned', session })
+    }
+  }
+
+  updateAgentSessions()
+  return hydrated
+}
 
 function refreshSessions() {
   const sessions = sessionManager.listWindows()
-  registry.replaceSessions(sessions)
+  const hydrated = hydrateSessionsWithAgentSessions(sessions)
+  registry.replaceSessions(hydrated)
 }
+
+// Debounced refresh triggered by Enter key in terminal input
+let enterRefreshTimer: Timer | null = null
+
+function scheduleEnterRefresh() {
+  if (enterRefreshTimer) {
+    clearTimeout(enterRefreshTimer)
+  }
+  enterRefreshTimer = setTimeout(() => {
+    enterRefreshTimer = null
+    refreshSessions()
+  }, config.enterRefreshDelayMs)
+}
+
+// Try to re-match orphaned sessions to windows by display name
+function recoverOrphanedSessions() {
+  const orphanedSessions = db.getInactiveSessions()
+  const windows = sessionManager.listWindows()
+  const activeSessions = db.getActiveSessions()
+
+  // Build set of windows that already have sessions
+  const claimedWindows = new Set(
+    activeSessions.map((s) => s.currentWindow).filter(Boolean)
+  )
+
+  // Build map of window name -> window for unclaimed windows
+  const unclaimedByName = new Map<string, typeof windows[number]>()
+  for (const window of windows) {
+    if (!claimedWindows.has(window.tmuxWindow)) {
+      unclaimedByName.set(window.name, window)
+    }
+  }
+
+  let recovered = 0
+  for (const session of orphanedSessions) {
+    const matchingWindow = unclaimedByName.get(session.displayName)
+    if (matchingWindow) {
+      db.updateSession(session.sessionId, {
+        currentWindow: matchingWindow.tmuxWindow,
+      })
+      unclaimedByName.delete(session.displayName)
+      recovered += 1
+      logger.info('session_recovered', {
+        sessionId: session.sessionId,
+        displayName: session.displayName,
+        window: matchingWindow.tmuxWindow,
+      })
+    }
+  }
+
+  if (recovered > 0) {
+    logger.info('recovery_complete', { recoveredCount: recovered })
+  }
+
+  return recovered
+}
+
+// Log startup state for debugging orphan issues
+const startupActiveSessions = db.getActiveSessions()
+const startupWindows = sessionManager.listWindows()
+logger.info('startup_state', {
+  activeSessionCount: startupActiveSessions.length,
+  windowCount: startupWindows.length,
+  activeWindows: startupActiveSessions.map((s) => ({
+    sessionId: s.sessionId.slice(0, 8),
+    name: s.displayName,
+    window: s.currentWindow,
+  })),
+  tmuxWindows: startupWindows.map((w) => ({
+    tmuxWindow: w.tmuxWindow,
+    name: w.name,
+  })),
+})
+
+// Try to recover orphaned sessions by matching display names to windows
+recoverOrphanedSessions()
 
 refreshSessions()
 setInterval(refreshSessions, config.refreshIntervalMs)
+if (config.logPollIntervalMs > 0) {
+  logPoller.start(config.logPollIntervalMs)
+}
 
 registry.on('session-update', (session) => {
   broadcast({ type: 'session-update', session })
@@ -178,8 +368,64 @@ registry.on('sessions', (sessions) => {
   broadcast({ type: 'sessions', sessions })
 })
 
+registry.on('agent-sessions', ({ active, inactive }) => {
+  broadcast({ type: 'agent-sessions', active, inactive })
+})
+
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/sessions', (c) => c.json(registry.getAll()))
+
+app.get('/api/session-preview/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  if (!sessionId || sessionId.length > MAX_FIELD_LENGTH || !SESSION_ID_PATTERN.test(sessionId)) {
+    return c.json({ error: 'Invalid session id' }, 400)
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    return c.json({ error: 'Session not found' }, 404)
+  }
+
+  const logPath = record.logFilePath
+  if (!logPath) {
+    return c.json({ error: 'No log file for session' }, 404)
+  }
+
+  try {
+    const stats = await fs.stat(logPath)
+    if (!stats.isFile()) {
+      return c.json({ error: 'Log file not found' }, 404)
+    }
+
+    // Read last 64KB of the file
+    const TAIL_BYTES = 64 * 1024
+    const fileSize = stats.size
+    const offset = Math.max(0, fileSize - TAIL_BYTES)
+    const fd = await fs.open(logPath, 'r')
+    const buffer = Buffer.alloc(Math.min(TAIL_BYTES, fileSize))
+    await fd.read(buffer, 0, buffer.length, offset)
+    await fd.close()
+
+    const content = buffer.toString('utf8')
+    // Take last 100 lines
+    const lines = content.split('\n').slice(-100)
+
+    return c.json({
+      sessionId,
+      displayName: record.displayName,
+      projectPath: record.projectPath,
+      agentType: record.agentType,
+      lastActivityAt: record.lastActivityAt,
+      lines,
+    })
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    if (err.code === 'ENOENT') {
+      return c.json({ error: 'Log file not found' }, 404)
+    }
+    return c.json({ error: 'Unable to read log file' }, 500)
+  }
+})
 app.get('/api/directories', async (c) => {
   const requestedPath = c.req.query('path') ?? '~'
 
@@ -354,14 +600,6 @@ app.post('/api/paste-image', async (c) => {
 
 app.use('/*', serveStatic({ root: './dist/client' }))
 
-interface WSData {
-  terminal: ITerminalProxy | null
-  currentSessionId: string | null
-  connectionId: string
-}
-
-const sockets = new Set<ServerWebSocket<WSData>>()
-
 const tlsEnabled = config.tlsCert && config.tlsKey
 
 Bun.serve<WSData>({
@@ -396,6 +634,12 @@ Bun.serve<WSData>({
     open(ws) {
       sockets.add(ws)
       send(ws, { type: 'sessions', sessions: registry.getAll() })
+      const agentSessions = registry.getAgentSessions()
+      send(ws, {
+        type: 'agent-sessions',
+        active: agentSessions.active,
+        inactive: agentSessions.inactive,
+      })
       initializePersistentTerminal(ws)
     },
     message(ws, message) {
@@ -423,6 +667,8 @@ function cleanupAllTerminals() {
   for (const ws of sockets) {
     cleanupTerminals(ws)
   }
+  logPoller.stop()
+  db.close()
 }
 
 process.on('SIGINT', () => {
@@ -519,6 +765,9 @@ function handleMessage(
       // Exit tmux copy-mode when user starts typing after scrolling
       handleCancelCopyMode(message.sessionId)
       return
+    case 'session-resume':
+      handleSessionResume(message, ws)
+      return
     default:
       send(ws, { type: 'error', message: 'Unknown message type' })
   }
@@ -582,6 +831,76 @@ function handleRename(
       message:
         error instanceof Error ? error.message : 'Unable to rename session',
     })
+  }
+}
+
+function handleSessionResume(
+  message: Extract<ClientMessage, { type: 'session-resume' }>,
+  ws: ServerWebSocket<WSData>
+) {
+  const sessionId = message.sessionId
+  if (!isValidSessionId(sessionId)) {
+    const error: ResumeError = {
+      code: 'NOT_FOUND',
+      message: 'Invalid session id',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    const error: ResumeError = { code: 'NOT_FOUND', message: 'Session not found' }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  if (record.currentWindow) {
+    const error: ResumeError = {
+      code: 'ALREADY_ACTIVE',
+      message: 'Session is already active',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
+  const resumeTemplate =
+    record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
+  const command = resumeTemplate.replace('{sessionId}', sessionId)
+  const projectPath =
+    record.projectPath ||
+    process.env.HOME ||
+    process.env.USERPROFILE ||
+    '.'
+
+  try {
+    const created = sessionManager.createWindow(
+      projectPath,
+      message.name ?? record.displayName,
+      command
+    )
+    db.updateSession(sessionId, {
+      currentWindow: created.tmuxWindow,
+      displayName: created.name,
+    })
+    refreshSessions()
+    send(ws, { type: 'session-resume-result', sessionId, ok: true })
+    broadcast({
+      type: 'session-activated',
+      session: toAgentSession({
+        ...record,
+        currentWindow: created.tmuxWindow,
+        displayName: created.name,
+      }),
+      window: created.tmuxWindow,
+    })
+  } catch (error) {
+    const err: ResumeError = {
+      code: 'RESUME_FAILED',
+      message:
+        error instanceof Error ? error.message : 'Unable to resume session',
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error: err })
   }
 }
 
@@ -737,6 +1056,11 @@ function handleTerminalInputPersistent(
     return
   }
   ws.data.terminal?.write(data)
+
+  // Schedule a quick status refresh after Enter key to catch working/waiting changes
+  if (data.includes('\r') || data.includes('\n')) {
+    scheduleEnterRefresh()
+  }
 }
 
 function handleTerminalResizePersistent(

@@ -63,6 +63,10 @@ class SessionManagerMock {
 class SessionRegistryMock {
   static instance: SessionRegistryMock | null = null
   sessions: Session[] = []
+  agentSessions: { active: unknown[]; inactive: unknown[] } = {
+    active: [],
+    inactive: [],
+  }
   listeners = new Map<string, Array<(payload: unknown) => void>>()
 
   constructor() {
@@ -79,6 +83,10 @@ class SessionRegistryMock {
     return this.sessions
   }
 
+  getAgentSessions() {
+    return this.agentSessions
+  }
+
   get(id: string) {
     return this.sessions.find((session) => session.id === id)
   }
@@ -93,6 +101,11 @@ class SessionRegistryMock {
     for (const listener of this.listeners.get(event) ?? []) {
       listener(payload)
     }
+  }
+
+  setAgentSessions(active: unknown[], inactive: unknown[]) {
+    this.agentSessions = { active, inactive }
+    this.emit('agent-sessions', { active, inactive })
   }
 }
 
@@ -172,6 +185,9 @@ mock.module('../../config', () => ({
     terminalMonitorTargets: true,
     tlsCert: '',
     tlsKey: '',
+    rgThreads: 1,
+    logMatchWorker: false,
+    logMatchProfile: false,
   },
 }))
 mock.module('../../SessionManager', () => ({
@@ -309,13 +325,19 @@ describe('server message handlers', () => {
     websocket.open?.(ws as never)
 
     expect(sent[0]).toEqual({ type: 'sessions', sessions: [baseSession] })
+    expect(sent[1]).toMatchObject({ type: 'agent-sessions' })
 
     const nextSession = { ...baseSession, id: 'session-2', name: 'beta' }
     registryInstance.emit('session-update', nextSession)
     registryInstance.emit('sessions', [baseSession, nextSession])
 
-    expect(sent[1]).toEqual({ type: 'session-update', session: nextSession })
-    expect(sent[2]).toEqual({
+    const sessionUpdate = sent.find(
+      (message) => message.type === 'session-update'
+    )
+    expect(sessionUpdate).toEqual({ type: 'session-update', session: nextSession })
+
+    const sessionMessages = sent.filter((message) => message.type === 'sessions')
+    expect(sessionMessages[1]).toEqual({
       type: 'sessions',
       sessions: [baseSession, nextSession],
     })
@@ -371,7 +393,8 @@ describe('server message handlers', () => {
     )
     websocket.message?.(ws as never, refreshPayload)
 
-    expect(listCalls).toBe(2)
+    // 4 calls: startup logging + recoverOrphanedSessions + initial refresh + message refresh
+    expect(listCalls).toBe(4)
     expect(replaceSessionsCalls).toHaveLength(2)
 
     websocket.message?.(
