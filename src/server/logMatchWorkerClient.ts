@@ -1,39 +1,6 @@
-import type { Session } from '../shared/types'
-import type { ExactMatchProfiler } from './logMatcher'
-import type { LogEntrySnapshot } from './logPollData'
-import type { SessionSnapshot } from './logMatchGate'
+import type { MatchWorkerRequest, MatchWorkerResponse } from './logMatchWorkerTypes'
 
-interface MatchWorkerSearchOptions {
-  tailBytes?: number
-  rgThreads?: number
-  profile?: boolean
-}
-
-export interface MatchWorkerRequest {
-  id: string
-  windows: Session[]
-  maxLogsPerPoll: number
-  logDirs?: string[]
-  sessions: SessionSnapshot[]
-  scrollbackLines: number
-  minTokensForMatch?: number
-  search?: MatchWorkerSearchOptions
-}
-
-export interface MatchWorkerResponse {
-  id: string
-  type: 'result' | 'error'
-  entries?: LogEntrySnapshot[]
-  scanMs?: number
-  sortMs?: number
-  matchMs?: number
-  matchWindowCount?: number
-  matchLogCount?: number
-  matchSkipped?: boolean
-  matches?: Array<{ logPath: string; tmuxWindow: string }>
-  profile?: ExactMatchProfiler
-  error?: string
-}
+export type { MatchWorkerRequest, MatchWorkerResponse } from './logMatchWorkerTypes'
 
 interface PendingRequest {
   resolve: (response: MatchWorkerResponse) => void

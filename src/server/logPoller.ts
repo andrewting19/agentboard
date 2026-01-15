@@ -1,24 +1,22 @@
-import os from 'node:os'
-import { performance } from 'node:perf_hooks'
 import { logger } from './logger'
 import type { SessionDatabase } from './db'
-import { getLogSearchDirs, getLogTimes, isCodexSubagent } from './logDiscovery'
-import {
-  DEFAULT_SCROLLBACK_LINES,
-  createExactMatchProfiler,
-  getLogTokenCount,
-  matchWindowsToLogsByExactRg,
-} from './logMatcher'
+import { getLogSearchDirs } from './logDiscovery'
+import { DEFAULT_SCROLLBACK_LINES } from './logMatcher'
 import { deriveDisplayName } from './agentSessions'
 import { generateUniqueSessionName } from './nameGenerator'
 import type { SessionRegistry } from './SessionRegistry'
 import { LogMatchWorkerClient } from './logMatchWorkerClient'
 import type { Session } from '../shared/types'
-import { collectLogEntryBatch, type LogEntrySnapshot } from './logPollData'
+import type { LogEntrySnapshot } from './logPollData'
 import {
   getEntriesNeedingMatch,
   type SessionSnapshot,
 } from './logMatchGate'
+import type {
+  MatchWorkerRequest,
+  MatchWorkerResponse,
+  OrphanCandidate,
+} from './logMatchWorkerTypes'
 
 const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
@@ -35,6 +33,11 @@ interface PollStats {
   durationMs: number
 }
 
+interface MatchWorkerClient {
+  poll(request: Omit<MatchWorkerRequest, 'id'>): Promise<MatchWorkerResponse>
+  dispose(): void
+}
+
 export class LogPoller {
   private interval: ReturnType<typeof setInterval> | null = null
   private db: SessionDatabase
@@ -44,9 +47,10 @@ export class LogPoller {
   private maxLogsPerPoll: number
   private matchProfile: boolean
   private rgThreads?: number
-  private matchWorker: LogMatchWorkerClient | null
+  private matchWorker: MatchWorkerClient | null
   private pollInFlight = false
   private forceOrphanRematch = true
+  private warnedWorkerDisabled = false
   // Cache of empty logs: logPath -> mtime when checked (re-check if mtime changes)
   private emptyLogCache: Map<string, number> = new Map()
   // Cache of re-match attempts: sessionId -> timestamp of last attempt
@@ -62,6 +66,7 @@ export class LogPoller {
       matchProfile,
       rgThreads,
       matchWorker,
+      matchWorkerClient,
     }: {
       onSessionOrphaned?: (sessionId: string) => void
       onSessionActivated?: (sessionId: string, window: string) => void
@@ -69,6 +74,7 @@ export class LogPoller {
       matchProfile?: boolean
       rgThreads?: number
       matchWorker?: boolean
+      matchWorkerClient?: MatchWorkerClient
     } = {}
   ) {
     this.db = db
@@ -79,7 +85,9 @@ export class LogPoller {
     this.maxLogsPerPoll = Math.max(1, limit)
     this.matchProfile = matchProfile ?? false
     this.rgThreads = rgThreads
-    this.matchWorker = matchWorker ? new LogMatchWorkerClient() : null
+    this.matchWorker =
+      matchWorkerClient ??
+      (matchWorker ? (new LogMatchWorkerClient() as MatchWorkerClient) : null)
   }
 
   start(intervalMs = DEFAULT_INTERVAL_MS): void {
@@ -148,15 +156,44 @@ export class LogPoller {
         : sessions
       let exactWindowMatches = new Map<string, Session>()
       let entriesToMatch: LogEntrySnapshot[] = []
+      let orphanEntries: LogEntrySnapshot[] = []
       let scanMs = 0
       let sortMs = 0
       let matchMs = 0
-      let matchProfile: ReturnType<typeof createExactMatchProfiler> | null = null
+      let matchProfile: MatchWorkerResponse['profile'] | null = null
       let matchWindowCount = 0
       let matchLogCount = 0
       let matchSkipped = false
 
-      if (this.matchWorker) {
+      const orphanCandidates: OrphanCandidate[] = []
+      if (forceOrphanRematch) {
+        for (const record of sessionRecords) {
+          if (record.currentWindow) continue
+          const logFilePath = record.logFilePath
+          if (!logFilePath) continue
+          orphanCandidates.push({
+            sessionId: record.sessionId,
+            logFilePath,
+            projectPath: record.projectPath ?? null,
+            agentType: record.agentType ?? null,
+            currentWindow: record.currentWindow ?? null,
+          })
+        }
+      }
+
+      if (!this.matchWorker) {
+        if (!this.warnedWorkerDisabled) {
+          this.warnedWorkerDisabled = true
+          logger.warn('log_match_worker_disabled', {
+            message: 'Log polling requires match worker; skipping cycle',
+          })
+        }
+        if (forceOrphanRematch) {
+          this.forceOrphanRematch = true
+        }
+        errors += 1
+        matchSkipped = true
+      } else {
         try {
           const response = await this.matchWorker.poll({
             windows,
@@ -165,12 +202,15 @@ export class LogPoller {
             sessions: matchSessions,
             scrollbackLines: DEFAULT_SCROLLBACK_LINES,
             minTokensForMatch: MIN_LOG_TOKENS_FOR_INSERT,
+            forceOrphanRematch,
+            orphanCandidates,
             search: {
               rgThreads: this.rgThreads,
               profile: this.matchProfile,
             },
           })
           entries = response.entries ?? []
+          orphanEntries = response.orphanEntries ?? []
           scanMs = response.scanMs ?? 0
           sortMs = response.sortMs ?? 0
           matchMs = response.matchMs ?? 0
@@ -187,72 +227,24 @@ export class LogPoller {
             if (!window) continue
             exactWindowMatches.set(match.logPath, window)
           }
+          for (const match of response.orphanMatches ?? []) {
+            if (exactWindowMatches.has(match.logPath)) continue
+            const window = windowsByTmux.get(match.tmuxWindow)
+            if (!window) continue
+            exactWindowMatches.set(match.logPath, window)
+          }
           entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
             minTokens: MIN_LOG_TOKENS_FOR_INSERT,
           })
         } catch (error) {
+          errors += 1
           logger.warn('log_match_worker_error', {
             message: error instanceof Error ? error.message : String(error),
           })
-          const fallback = collectLogEntryBatch(this.maxLogsPerPoll)
-          entries = fallback.entries
-          scanMs = fallback.scanMs
-          sortMs = fallback.sortMs
-          const matchStart = performance.now()
-          if (this.matchProfile) {
-            matchProfile = createExactMatchProfiler()
+          if (forceOrphanRematch) {
+            this.forceOrphanRematch = true
           }
-          entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
-            minTokens: MIN_LOG_TOKENS_FOR_INSERT,
-          })
-          if (entriesToMatch.length === 0) {
-            matchMs = 0
-            matchSkipped = true
-          } else {
-            exactWindowMatches = matchWindowsToLogsByExactRg(
-              windows,
-              logDirs,
-              DEFAULT_SCROLLBACK_LINES,
-              {
-                logPaths: entriesToMatch.map((entry) => entry.logPath),
-                rgThreads: this.rgThreads,
-                profile: matchProfile ?? undefined,
-              }
-            )
-            matchMs = performance.now() - matchStart
-            matchWindowCount = windows.length
-            matchLogCount = entriesToMatch.length
-          }
-        }
-      } else {
-        const fallback = collectLogEntryBatch(this.maxLogsPerPoll)
-        entries = fallback.entries
-        scanMs = fallback.scanMs
-        sortMs = fallback.sortMs
-        const matchStart = performance.now()
-        if (this.matchProfile) {
-          matchProfile = createExactMatchProfiler()
-        }
-        entriesToMatch = getEntriesNeedingMatch(entries, matchSessions, {
-          minTokens: MIN_LOG_TOKENS_FOR_INSERT,
-        })
-        if (entriesToMatch.length === 0) {
-          matchMs = 0
           matchSkipped = true
-        } else {
-          exactWindowMatches = matchWindowsToLogsByExactRg(
-            windows,
-            logDirs,
-            DEFAULT_SCROLLBACK_LINES,
-            {
-              logPaths: entriesToMatch.map((entry) => entry.logPath),
-              rgThreads: this.rgThreads,
-              profile: matchProfile ?? undefined,
-            }
-          )
-          matchMs = performance.now() - matchStart
-          matchWindowCount = windows.length
-          matchLogCount = entriesToMatch.length
         }
       }
 
@@ -270,59 +262,7 @@ export class LogPoller {
         })
       }
 
-      const orphanEntries: LogEntrySnapshot[] = []
-      if (forceOrphanRematch) {
-        const existingLogPaths = new Set(entries.map((entry) => entry.logPath))
-        for (const record of sessionRecords) {
-          if (record.currentWindow) continue
-          const logPath = record.logFilePath
-          if (!logPath || existingLogPaths.has(logPath)) continue
-
-          const agentType = record.agentType
-          if (agentType === 'codex' && isCodexSubagent(logPath)) {
-            continue
-          }
-
-          const times = getLogTimes(logPath)
-          if (!times) continue
-          const logTokenCount = getLogTokenCount(logPath)
-          if (logTokenCount < MIN_LOG_TOKENS_FOR_INSERT) {
-            continue
-          }
-
-          orphanEntries.push({
-            logPath,
-            mtime: times.mtime.getTime(),
-            birthtime: times.birthtime.getTime(),
-            sessionId: record.sessionId,
-            projectPath: record.projectPath ?? null,
-            agentType,
-            isCodexSubagent: false,
-            logTokenCount,
-          })
-        }
-      }
-
       if (orphanEntries.length > 0) {
-        const startupRgThreads = Math.max(
-          this.rgThreads ?? 1,
-          Math.min(os.cpus().length, 4)
-        )
-        const orphanMatches = matchWindowsToLogsByExactRg(
-          windows,
-          logDirs,
-          DEFAULT_SCROLLBACK_LINES,
-          {
-            logPaths: orphanEntries.map((entry) => entry.logPath),
-            rgThreads: startupRgThreads,
-            profile: matchProfile ?? undefined,
-          }
-        )
-        for (const [logPath, window] of orphanMatches) {
-          if (!exactWindowMatches.has(logPath)) {
-            exactWindowMatches.set(logPath, window)
-          }
-        }
         entries = [...entries, ...orphanEntries]
       }
 

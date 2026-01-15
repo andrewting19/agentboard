@@ -1,55 +1,29 @@
 /// <reference lib="webworker" />
+import os from 'node:os'
 import { performance } from 'node:perf_hooks'
-import type { Session } from '../shared/types'
-import { getLogSearchDirs } from './logDiscovery'
+import { getLogSearchDirs, getLogTimes, isCodexSubagent } from './logDiscovery'
 import {
   DEFAULT_SCROLLBACK_LINES,
   createExactMatchProfiler,
+  getLogTokenCount,
   matchWindowsToLogsByExactRg,
 } from './logMatcher'
-import { getEntriesNeedingMatch, type SessionSnapshot } from './logMatchGate'
+import { getEntriesNeedingMatch } from './logMatchGate'
 import { collectLogEntryBatch, type LogEntrySnapshot } from './logPollData'
+import type {
+  MatchWorkerRequest,
+  MatchWorkerResponse,
+  OrphanCandidate,
+} from './logMatchWorkerTypes'
 
-interface MatchWorkerSearchOptions {
-  tailBytes?: number
-  rgThreads?: number
-  profile?: boolean
-}
+const ctx =
+  typeof self === 'undefined'
+    ? null
+    : (self as DedicatedWorkerGlobalScope | null)
 
-interface MatchWorkerRequest {
-  id: string
-  windows: Session[]
-  maxLogsPerPoll: number
-  logDirs?: string[]
-  sessions: SessionSnapshot[]
-  scrollbackLines?: number
-  minTokensForMatch?: number
-  search?: MatchWorkerSearchOptions
-}
-
-interface MatchWorkerResponse {
-  id: string
-  type: 'result' | 'error'
-  entries?: LogEntrySnapshot[]
-  scanMs?: number
-  sortMs?: number
-  matchMs?: number
-  matchWindowCount?: number
-  matchLogCount?: number
-  matchSkipped?: boolean
-  matches?: Array<{ logPath: string; tmuxWindow: string }>
-  profile?: ReturnType<typeof createExactMatchProfiler>
-  error?: string
-}
-
-const ctx = self as DedicatedWorkerGlobalScope
-
-ctx.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
-  const payload = event.data
-  if (!payload || !payload.id) {
-    return
-  }
-
+export function handleMatchWorkerRequest(
+  payload: MatchWorkerRequest
+): MatchWorkerResponse {
   try {
     const search = payload.search ?? {}
     const { entries, scanMs, sortMs } = collectLogEntryBatch(
@@ -62,6 +36,8 @@ ctx.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
     let matchLogCount = 0
     let matchSkipped = false
     let resolved: Array<{ logPath: string; tmuxWindow: string }> = []
+    let orphanEntries: LogEntrySnapshot[] = []
+    let orphanMatches: Array<{ logPath: string; tmuxWindow: string }> = []
 
     const entriesToMatch = getEntriesNeedingMatch(entries, payload.sessions, {
       minTokens: payload.minTokensForMatch ?? 0,
@@ -91,10 +67,42 @@ ctx.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
       }))
     }
 
-    const response: MatchWorkerResponse = {
+    const orphanCandidates = payload.orphanCandidates ?? []
+    if (payload.forceOrphanRematch && orphanCandidates.length > 0) {
+      orphanEntries = buildOrphanEntries(
+        orphanCandidates,
+        entries,
+        payload.minTokensForMatch ?? 0
+      )
+      if (orphanEntries.length > 0) {
+        const startupRgThreads = Math.max(
+          search.rgThreads ?? 1,
+          Math.min(os.cpus().length, 4)
+        )
+        const matches = matchWindowsToLogsByExactRg(
+          payload.windows,
+          logDirs,
+          payload.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
+          {
+            logPaths: orphanEntries.map((entry) => entry.logPath),
+            rgThreads: startupRgThreads,
+            profile,
+          }
+        )
+        orphanMatches = Array.from(matches.entries()).map(
+          ([logPath, window]) => ({
+            logPath,
+            tmuxWindow: window.tmuxWindow,
+          })
+        )
+      }
+    }
+
+    return {
       id: payload.id,
       type: 'result',
       entries,
+      orphanEntries,
       scanMs,
       sortMs,
       matchMs,
@@ -102,15 +110,66 @@ ctx.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
       matchLogCount,
       matchSkipped,
       matches: resolved,
+      orphanMatches,
       profile,
     }
-    ctx.postMessage(response)
   } catch (error) {
-    const response: MatchWorkerResponse = {
+    return {
       id: payload.id,
       type: 'error',
       error: error instanceof Error ? error.message : String(error),
     }
+  }
+}
+
+function buildOrphanEntries(
+  candidates: OrphanCandidate[],
+  entries: LogEntrySnapshot[],
+  minTokens: number
+): LogEntrySnapshot[] {
+  const existingLogPaths = new Set(entries.map((entry) => entry.logPath))
+  const orphanEntries: LogEntrySnapshot[] = []
+
+  for (const record of candidates) {
+    const logPath = record.logFilePath
+    if (!logPath || existingLogPaths.has(logPath)) continue
+
+    const agentType = record.agentType
+    if (agentType === 'codex' && isCodexSubagent(logPath)) {
+      continue
+    }
+
+    const times = getLogTimes(logPath)
+    if (!times) continue
+
+    const logTokenCount = getLogTokenCount(logPath)
+    if (minTokens > 0 && logTokenCount < minTokens) {
+      continue
+    }
+
+    orphanEntries.push({
+      logPath,
+      mtime: times.mtime.getTime(),
+      birthtime: times.birthtime.getTime(),
+      sessionId: record.sessionId,
+      projectPath: record.projectPath ?? null,
+      agentType: agentType ?? null,
+      isCodexSubagent: false,
+      logTokenCount,
+    })
+  }
+
+  return orphanEntries
+}
+
+if (ctx) {
+  ctx.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
+    const payload = event.data
+    if (!payload || !payload.id) {
+      return
+    }
+
+    const response = handleMatchWorkerRequest(payload)
     ctx.postMessage(response)
   }
 }

@@ -8,6 +8,11 @@ import { LogPoller } from '../logPoller'
 import { SessionRegistry } from '../SessionRegistry'
 import type { Session } from '../../shared/types'
 import { encodeProjectPath } from '../logDiscovery'
+import { handleMatchWorkerRequest } from '../logMatchWorker'
+import type {
+  MatchWorkerRequest,
+  MatchWorkerResponse,
+} from '../logMatchWorkerTypes'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
 const originalSpawnSync = bunAny.spawnSync
@@ -129,6 +134,20 @@ function buildLastExchangeOutput(tokens: string): string {
   return `❯ previous\n⏺ ${tokens}\n❯ ${tokens}\n`
 }
 
+class InlineMatchWorkerClient {
+  async poll(
+    request: Omit<MatchWorkerRequest, 'id'>
+  ): Promise<MatchWorkerResponse> {
+    const response = handleMatchWorkerRequest({ ...request, id: 'test' })
+    if (response.type === 'error') {
+      throw new Error(response.error ?? 'Log match worker error')
+    }
+    return response
+  }
+
+  dispose(): void {}
+}
+
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-poller-'))
   process.env.CLAUDE_CONFIG_DIR = path.join(tempRoot, 'claude')
@@ -196,7 +215,9 @@ describe('LogPoller', () => {
     })
     await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
 
-    const poller = new LogPoller(db, registry, { matchWorker: false })
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
     const stats = await poller.pollOnce()
     expect(stats.newSessions).toBe(1)
 
@@ -236,7 +257,9 @@ describe('LogPoller', () => {
     })
     await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
 
-    const poller = new LogPoller(db, registry, { matchWorker: false })
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
     await poller.pollOnce()
 
     const tokensB = Array.from({ length: 60 }, (_, i) => `next${i}`).join(' ')
@@ -307,7 +330,9 @@ describe('LogPoller', () => {
       currentWindow: null,
     })
 
-    const poller = new LogPoller(db, registry, { matchWorker: false })
+    const poller = new LogPoller(db, registry, {
+      matchWorkerClient: new InlineMatchWorkerClient(),
+    })
     await poller.pollOnce()
 
     const updated = db.getSessionById('claude-session-orphan')
