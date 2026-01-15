@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer, useCallback } from 'react'
+import { useState, useRef, useEffect, useReducer, useCallback, createContext, useContext, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   DndContext,
@@ -47,6 +47,9 @@ const statusBarClass: Record<Session['status'], string> = {
   permission: 'status-bar-approval pulse-approval',
   unknown: 'status-bar-waiting',
 }
+
+// Context to track current session IDs - allows exiting items to detect they're being removed
+const CurrentSessionIdsContext = createContext<Set<string>>(new Set())
 
 // Force re-render every 30s to update relative timestamps
 function useTimestampRefresh() {
@@ -188,6 +191,12 @@ export default function SessionList({
     manualOrder: manualSessionOrder,
   })
 
+  // Memoized set of current session IDs for detecting exiting items in AnimatePresence
+  const currentSessionIds = useMemo(
+    () => new Set(sortedSessions.map((s) => s.id)),
+    [sortedSessions]
+  )
+
   // Drag-and-drop setup
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -295,51 +304,53 @@ export default function SessionList({
             No sessions
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <SortableContext
-              items={sortedSessions.map((s) => s.id)}
-              strategy={verticalListSortingStrategy}
+          <CurrentSessionIdsContext.Provider value={currentSessionIds}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
             >
-              <div>
-                <AnimatePresence initial={false}>
-                  {sortedSessions.map((session, index) => {
-                    const isNew = newlyActiveIds.has(session.id)
-                    const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
-                    // Calculate drop indicator position
-                    const activeIndex = activeId ? sortedSessions.findIndex((s) => s.id === activeId) : -1
-                    const isOver = overId === session.id && activeId !== session.id
-                    const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
-                    return (
-                      <SortableSessionItem
-                        key={session.id}
-                        session={session}
-                        isNew={isNew}
-                        entryDelay={entryDelay}
-                        exitDuration={EXIT_DURATION}
-                        prefersReducedMotion={prefersReducedMotion}
-                        layoutAnimationsDisabled={layoutAnimationsDisabled}
-                        isSelected={session.id === selectedSessionId}
-                        isEditing={session.id === editingSessionId}
-                        showSessionIdPrefix={showSessionIdPrefix}
-                        dropIndicator={showDropIndicator}
-                        onSelect={() => onSelect(session.id)}
-                        onStartEdit={() => setEditingSessionId(session.id)}
-                        onCancelEdit={() => setEditingSessionId(null)}
-                        onRename={(newName) => handleRename(session.id, newName)}
-                      />
-                    )
-                  })}
-                </AnimatePresence>
-              </div>
-            </SortableContext>
-          </DndContext>
+              <SortableContext
+                items={sortedSessions.map((s) => s.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div>
+                  <AnimatePresence initial={false}>
+                    {sortedSessions.map((session, index) => {
+                      const isNew = newlyActiveIds.has(session.id)
+                      const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
+                      // Calculate drop indicator position
+                      const activeIndex = activeId ? sortedSessions.findIndex((s) => s.id === activeId) : -1
+                      const isOver = overId === session.id && activeId !== session.id
+                      const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
+                      return (
+                        <SortableSessionItem
+                          key={session.id}
+                          session={session}
+                          isNew={isNew}
+                          entryDelay={entryDelay}
+                          exitDuration={EXIT_DURATION}
+                          prefersReducedMotion={prefersReducedMotion}
+                          layoutAnimationsDisabled={layoutAnimationsDisabled}
+                          isSelected={session.id === selectedSessionId}
+                          isEditing={session.id === editingSessionId}
+                          showSessionIdPrefix={showSessionIdPrefix}
+                          dropIndicator={showDropIndicator}
+                          onSelect={() => onSelect(session.id)}
+                          onStartEdit={() => setEditingSessionId(session.id)}
+                          onCancelEdit={() => setEditingSessionId(null)}
+                          onRename={(newName) => handleRename(session.id, newName)}
+                        />
+                      )
+                    })}
+                  </AnimatePresence>
+                </div>
+              </SortableContext>
+            </DndContext>
+          </CurrentSessionIdsContext.Provider>
         )}
 
         {inactiveSessions.length > 0 && (
@@ -471,6 +482,11 @@ function SortableSessionItem({
   onCancelEdit,
   onRename,
 }: SortableSessionItemProps) {
+  // Check if this item is exiting (no longer in the current session list)
+  // AnimatePresence keeps components mounted during exit, but sortable context no longer has the ID
+  const currentSessionIds = useContext(CurrentSessionIdsContext)
+  const isExiting = !currentSessionIds.has(session.id)
+
   const {
     attributes,
     listeners,
@@ -478,9 +494,10 @@ function SortableSessionItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: session.id })
+  } = useSortable({ id: session.id, disabled: isExiting })
 
-  const style = {
+  // Don't apply sortable styles when exiting - let framer-motion handle the exit animation cleanly
+  const style = isExiting ? undefined : {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : undefined,
@@ -489,10 +506,10 @@ function SortableSessionItem({
 
   return (
     <motion.div
-      ref={setNodeRef}
+      ref={isExiting ? undefined : setNodeRef}
       style={style}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled}
+      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
       initial={prefersReducedMotion ? false : { opacity: 0, y: -16, scale: 0.85 }}
       animate={
         prefersReducedMotion
@@ -508,8 +525,7 @@ function SortableSessionItem({
         y: { duration: exitDuration / 1000, ease: 'easeOut', delay: entryDelay },
         scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
       }}
-      {...attributes}
-      {...listeners}
+      {...(isExiting ? {} : { ...attributes, ...listeners })}
     >
       {/* Drop indicator line */}
       {dropIndicator === 'above' && (
