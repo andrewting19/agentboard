@@ -14,9 +14,13 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
 - Tracks Claude and Codex sessions by parsing their logs, auto-matching to active tmux windows. Inactive sessions can be restored with one click.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
 
-| Desktop | Mobile | Sessions |
+### Desktop
+<img src="assets/desktop.png" alt="Desktop" width="700"/>
+
+### Mobile
+| Terminal | Controls | Sessions |
 | :---: | :---: | :---: |
-| <img src="assets/desktop.png" alt="Desktop" width="500"/> | <table><tr><td><img src="assets/mobile.jpeg" alt="Mobile" width="200"/></td><td><img src="assets/mobile-controls.jpeg" alt="Mobile controls" width="200"/></td></tr></table> | <img src="assets/sessions.png" alt="Sessions" width="200"/> |
+| <img src="assets/mobile.jpeg" alt="Terminal" height="400"/> | <img src="assets/mobile-controls.jpeg" alt="Controls" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
 
 ## Requirements
 
