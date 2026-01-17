@@ -25,6 +25,15 @@ describe('detectsPermissionPrompt', () => {
     expect(detectsPermissionPrompt(content)).toBe(false)
   })
 
+  test('does not match "1. Allow" appearing mid-sentence', () => {
+    const content = [
+      '3. **fix: prevent false positive permission detection**',
+      '   - Regex was matching "1. Allow" in regular numbered lists',
+      '   - Added fix to require start of line',
+    ].join('\n')
+    expect(detectsPermissionPrompt(content)).toBe(false)
+  })
+
   test('matches AskUserQuestion selection menu', () => {
     const content = [
       'Which issue would you like me to investigate?',
