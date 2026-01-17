@@ -23,7 +23,7 @@ const MIN_INTERVAL_MS = 2000
 const DEFAULT_INTERVAL_MS = 5000
 const DEFAULT_MAX_LOGS = 25
 const STARTUP_LAST_MESSAGE_BACKFILL_MAX = 100
-const MIN_LOG_TOKENS_FOR_INSERT = 10
+const MIN_LOG_TOKENS_FOR_INSERT = 1
 const REMATCH_COOLDOWN_MS = 60 * 1000 // 1 minute between re-match attempts
 
 interface PollStats {
