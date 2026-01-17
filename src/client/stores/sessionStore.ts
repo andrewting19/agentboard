@@ -44,7 +44,26 @@ export const useSessionStore = create<SessionState>()(
       connectionStatus: 'connecting',
       connectionError: null,
       setSessions: (sessions) => {
-        const selected = get().selectedSessionId
+        const state = get()
+        const selected = state.selectedSessionId
+        const currentSessions = state.sessions
+        const exitingSessions = state.exitingSessions
+
+        // Find sessions that are being removed (exist in current but not in new)
+        const newSessionIds = new Set(sessions.map((s) => s.id))
+        const removedSessions = currentSessions.filter(
+          (s) => !newSessionIds.has(s.id) && !exitingSessions.has(s.id)
+        )
+
+        // Mark removed sessions as exiting for exit animation
+        let nextExitingSessions = exitingSessions
+        if (removedSessions.length > 0) {
+          nextExitingSessions = new Map(exitingSessions)
+          for (const session of removedSessions) {
+            nextExitingSessions.set(session.id, session)
+          }
+        }
+
         let newSelectedId: string | null = selected
         if (
           selected !== null &&
@@ -63,6 +82,7 @@ export const useSessionStore = create<SessionState>()(
           sessions,
           hasLoaded: true,
           selectedSessionId: newSelectedId,
+          exitingSessions: nextExitingSessions,
         })
       },
       setAgentSessions: (active, inactive) =>

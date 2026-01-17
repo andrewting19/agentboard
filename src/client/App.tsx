@@ -46,6 +46,7 @@ export default function App() {
   )
   const connectionError = useSessionStore((state) => state.connectionError)
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
+  const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
 
   const theme = useThemeStore((state) => state.theme)
   const defaultProjectDir = useSettingsStore(
@@ -128,6 +129,7 @@ export default function App() {
         addRecentPath(message.session.projectPath)
       }
       if (message.type === 'session-removed') {
+        // setSessions handles marking removed sessions as exiting for animation
         const currentSessions = useSessionStore.getState().sessions
         const nextSessions = currentSessions.filter(
           (session) => session.id !== message.sessionId
@@ -235,8 +237,6 @@ export default function App() {
       setSelectedSessionId(sortedSessions[0].id)
     }
   }, [hasLoaded, selectedSessionId, sortedSessions, setSelectedSessionId])
-
-  const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
 
   const handleKillSession = useCallback((sessionId: string) => {
     // Mark as exiting before sending kill to preserve session data for exit animation
