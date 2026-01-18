@@ -557,10 +557,12 @@ export default function SessionList({
               strategy={verticalListSortingStrategy}
             >
               <div>
-                <AnimatePresence initial={false}>
+                <AnimatePresence initial={false} mode="popLayout">
                   {filteredSessions.map((session, index) => {
-                    const isNew = newlyActiveIds.has(session.id) || newlyFilteredInIds.has(session.id)
-                    const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
+                    const isTrulyNew = newlyActiveIds.has(session.id)
+                    const isFilteredIn = newlyFilteredInIds.has(session.id)
+                    // Only delay truly new sessions, not filter-in (to avoid blank gaps)
+                    const entryDelay = isTrulyNew ? ENTRY_DELAY / 1000 : 0
                     const isExiting = exitingIds.has(session.id)
                     // Calculate drop indicator position
                     const activeIndex = activeId
@@ -568,6 +570,8 @@ export default function SessionList({
                       : -1
                     const isOver = overId === session.id && activeId !== session.id
                     const showDropIndicator = isOver ? (activeIndex > index ? 'above' : 'below') : null
+                    // Show bounce for both new and filter-in, but delay only for truly new
+                    const isNew = isTrulyNew || isFilteredIn
                     return (
                       <SortableSessionItem
                         key={session.id}
@@ -754,23 +758,24 @@ function SortableSessionItem({
   return (
     <motion.div
       ref={isExiting ? undefined : setNodeRef}
-      style={style}
+      style={{ ...style, overflow: 'hidden' }}
       className="relative"
       layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
-      initial={prefersReducedMotion ? false : { opacity: 0, y: -16, scale: 0.85 }}
+      initial={prefersReducedMotion ? false : { opacity: 0, height: 0, scale: 0.95 }}
       animate={
         prefersReducedMotion
-          ? { opacity: 1, y: 0 }
+          ? { opacity: 1, height: 'auto' }
           : isNew
-            ? { opacity: 1, y: 0, scale: [1.06, 0.98, 1] }
-            : { opacity: 1, y: 0, scale: 1 }
+            ? { opacity: 1, height: 'auto', scale: [1.02, 0.99, 1] }
+            : { opacity: 1, height: 'auto', scale: 1 }
       }
-      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.9 }}
+      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, scale: 0.95 }}
       transition={prefersReducedMotion ? { duration: 0 } : {
-        layout: { type: 'spring', stiffness: 500, damping: 35, delay: entryDelay },
+        // Layout should respond immediately to reflow, not wait for entry delay
+        layout: { type: 'spring', stiffness: 500, damping: 35 },
+        height: { duration: exitDuration / 1000, ease: 'easeOut', delay: isExiting ? 0 : entryDelay },
         opacity: { duration: exitDuration / 1000, delay: isExiting ? 0 : entryDelay },
-        y: { duration: exitDuration / 1000, ease: 'easeOut', delay: isExiting ? 0 : entryDelay },
-        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: isExiting ? 0 : entryDelay },
+        scale: { duration: 0.3, ease: [0.34, 1.56, 0.64, 1], delay: isExiting ? 0 : entryDelay },
       }}
       {...(isExiting ? {} : attributes)}
       {...(isExiting ? {} : listeners)}
