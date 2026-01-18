@@ -134,6 +134,18 @@ function buildLastExchangeOutput(tokens: string): string {
   return `❯ previous\n⏺ ${tokens}\n❯ ${tokens}\n`
 }
 
+/**
+ * Build a log entry in proper Claude/Codex format with "text" field.
+ * This format is required for the JSON field pattern matching.
+ */
+function buildUserLogEntry(message: string, extra: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    ...extra,
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: message }] }
+  })
+}
+
 class InlineMatchWorkerClient {
   async poll(
     request: Omit<MatchWorkerRequest, 'id'>
@@ -203,15 +215,10 @@ describe('LogPoller', () => {
     )
     await fs.mkdir(logDir, { recursive: true })
     const logPath = path.join(logDir, 'session-known.jsonl')
-    const line = JSON.stringify({
-      type: 'user',
-      sessionId: 'claude-session-known',
-      cwd: projectPath,
-      content: tokens,
-    })
+    const line = buildUserLogEntry(tokens, { sessionId: 'claude-session-known', cwd: projectPath })
     const assistantLine = JSON.stringify({
       type: 'assistant',
-      content: tokens,
+      message: { content: [{ type: 'text', text: tokens }] },
     })
     await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
 
@@ -260,15 +267,10 @@ describe('LogPoller', () => {
     )
     await fs.mkdir(logDir, { recursive: true })
     const logPath = path.join(logDir, 'session-1.jsonl')
-    const line = JSON.stringify({
-      type: 'user',
-      sessionId: 'claude-session-1',
-      cwd: projectPath,
-      content: tokens,
-    })
+    const line = buildUserLogEntry(tokens, { sessionId: 'claude-session-1', cwd: projectPath })
     const assistantLine = JSON.stringify({
       type: 'assistant',
-      content: tokens,
+      message: { content: [{ type: 'text', text: tokens }] },
     })
     await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
 
@@ -302,15 +304,10 @@ describe('LogPoller', () => {
     await fs.mkdir(logDir, { recursive: true })
 
     const logPathA = path.join(logDir, 'session-a.jsonl')
-    const lineA = JSON.stringify({
-      type: 'user',
-      sessionId: 'claude-session-a',
-      cwd: projectPath,
-      content: tokensA,
-    })
+    const lineA = buildUserLogEntry(tokensA, { sessionId: 'claude-session-a', cwd: projectPath })
     const assistantLineA = JSON.stringify({
       type: 'assistant',
-      content: tokensA,
+      message: { content: [{ type: 'text', text: tokensA }] },
     })
     await fs.writeFile(logPathA, `${lineA}\n${assistantLineA}\n`)
 
@@ -328,15 +325,10 @@ describe('LogPoller', () => {
     setTmuxOutput(baseSession.tmuxWindow, buildLastExchangeOutput(tokensB))
 
     const logPathB = path.join(logDir, 'session-b.jsonl')
-    const lineB = JSON.stringify({
-      type: 'user',
-      sessionId: 'claude-session-b',
-      cwd: projectPath,
-      content: tokensB,
-    })
+    const lineB = buildUserLogEntry(tokensB, { sessionId: 'claude-session-b', cwd: projectPath })
     const assistantLineB = JSON.stringify({
       type: 'assistant',
-      content: tokensB,
+      message: { content: [{ type: 'text', text: tokensB }] },
     })
     await fs.writeFile(logPathB, `${lineB}\n${assistantLineB}\n`)
 
@@ -372,19 +364,9 @@ describe('LogPoller', () => {
     const oldMessage = 'old prompt'
     const newMessage = 'new prompt'
     const logLines = [
-      JSON.stringify({
-        type: 'user',
-        sessionId,
-        cwd: projectPath,
-        content: oldMessage,
-      }),
-      JSON.stringify({ type: 'assistant', content: 'ack' }),
-      JSON.stringify({
-        type: 'user',
-        sessionId,
-        cwd: projectPath,
-        content: newMessage,
-      }),
+      buildUserLogEntry(oldMessage, { sessionId, cwd: projectPath }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ack' }] } }),
+      buildUserLogEntry(newMessage, { sessionId, cwd: projectPath }),
     ].join('\n')
     await fs.writeFile(logPath, `${logLines}\n`)
 
@@ -429,15 +411,10 @@ describe('LogPoller', () => {
     )
     await fs.mkdir(logDir, { recursive: true })
     const logPath = path.join(logDir, 'session-orphan.jsonl')
-    const line = JSON.stringify({
-      type: 'user',
-      sessionId: 'claude-session-orphan',
-      cwd: projectPath,
-      content: tokens,
-    })
+    const line = buildUserLogEntry(tokens, { sessionId: 'claude-session-orphan', cwd: projectPath })
     const assistantLine = JSON.stringify({
       type: 'assistant',
-      content: tokens,
+      message: { content: [{ type: 'text', text: tokens }] },
     })
     await fs.writeFile(logPath, `${line}\n${assistantLine}\n`)
 

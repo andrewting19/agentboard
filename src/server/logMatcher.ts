@@ -125,6 +125,120 @@ function messageToFlexiblePattern(message: string): string {
     .replace(/"/g, '(?:\\\\?")?')
 }
 
+const MAX_MESSAGE_MATCH_PREFIX = 1000
+const TOOL_RESULT_TYPES = new Set(['tool_result', 'custom_tool_call_output'])
+const TOOL_RESULT_KEYS = new Set(['toolUseResult'])
+const MESSAGE_VALUE_KEYS = new Set(['text', 'message', 'content'])
+
+function matchesMessageWithPrefixLimit(text: string, pattern: RegExp): boolean {
+  const index = text.search(pattern)
+  return index >= 0 && index <= MAX_MESSAGE_MATCH_PREFIX
+}
+
+function hasMessageInParsedJson(value: unknown, pattern: RegExp): boolean {
+  if (value === null || value === undefined) return false
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (hasMessageInParsedJson(item, pattern)) return true
+    }
+    return false
+  }
+
+  if (typeof value !== 'object') {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  const typeValue = record.type
+  if (typeof typeValue === 'string' && TOOL_RESULT_TYPES.has(typeValue)) {
+    return false
+  }
+
+  for (const [key, child] of Object.entries(record)) {
+    if (TOOL_RESULT_KEYS.has(key)) continue
+
+    if (MESSAGE_VALUE_KEYS.has(key) && typeof child === 'string') {
+      if (matchesMessageWithPrefixLimit(child, pattern)) {
+        return true
+      }
+      continue
+    }
+
+    if (child && typeof child === 'object') {
+      if (hasMessageInParsedJson(child, pattern)) return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Check if log content has the message in a valid user message context.
+ *
+ * This filters out false positives where the message appears inside tool_result
+ * content (e.g., terminal captures from another session observing this window).
+ *
+ * Valid contexts:
+ *   - "text" field: {"type":"text","text":"user message"}
+ *   - "message" field: {"message":"user message"}
+ *   - "content" field NOT in tool_result: {"role":"user","content":"user message"}
+ *
+ * Invalid contexts:
+ *   - Tool result content: {"type":"tool_result","content":"❯ captured terminal"}
+ */
+export function hasMessageInValidUserContext(
+  logContent: string,
+  userMessage: string
+): boolean {
+  const basePattern = messageToFlexiblePattern(userMessage)
+  const baseRegex = new RegExp(basePattern, 'm')
+  const lines = logContent.split('\n')
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (hasMessageInParsedJson(parsed, baseRegex)) {
+        return true
+      }
+      continue
+    } catch {
+      // Fall back to regex matching for non-JSON lines.
+    }
+
+    // Check for "text" or "message" fields - always valid
+    const textMessagePattern = new RegExp(
+      `"(?:text|message)"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
+      'm'
+    )
+    if (textMessagePattern.test(line)) {
+      return true
+    }
+
+    const hasToolResultType = /"type"\s*:\s*"tool_result"/.test(line)
+    const hasCustomToolOutputType = /"type"\s*:\s*"custom_tool_call_output"/.test(
+      line
+    )
+    const hasToolUseResultKey = /"toolUseResult"\s*:/.test(line)
+
+    // Check for "content" field only when not in a tool-result context.
+    if (!hasToolResultType && !hasCustomToolOutputType && !hasToolUseResultKey) {
+      const contentPattern = new RegExp(
+        `"content"\\s*:\\s*"[^"]{0,1000}?${basePattern}`,
+        'm'
+      )
+      if (contentPattern.test(line)) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
 /**
  * Search for logs containing an exact user message using ripgrep.
  * Searches both Claude and Codex log directories.
@@ -212,6 +326,32 @@ function readLogTail(logPath: string, byteLimit = DEFAULT_LOG_TAIL_BYTES): strin
   }
 }
 
+const MAX_PROGRESSIVE_TAIL_BYTES = 2 * 1024 * 1024
+
+/**
+ * Check if a log file contains a message in a valid user context, using progressive
+ * tail reading. Starts with a small tail and expands up to maxTailBytes if needed.
+ * This handles cases where logs have lots of assistant output after the last user message.
+ */
+function hasMessageInValidUserContextProgressive(
+  logPath: string,
+  userMessage: string,
+  initialTailBytes = DEFAULT_LOG_TAIL_BYTES,
+  maxTailBytes = MAX_PROGRESSIVE_TAIL_BYTES
+): boolean {
+  let tailBytes = initialTailBytes
+  while (tailBytes <= maxTailBytes) {
+    const tail = readLogTail(logPath, tailBytes)
+    if (!tail) return false
+    if (hasMessageInValidUserContext(tail, userMessage)) {
+      return true
+    }
+    if (tailBytes >= maxTailBytes) break
+    tailBytes = Math.min(tailBytes * 4, maxTailBytes)
+  }
+  return false
+}
+
 export function findLogsWithExactMessage(
   userMessage: string,
   logDirs: string | string[],
@@ -240,13 +380,13 @@ export function findLogsWithExactMessage(
   const dirs = Array.isArray(logDirs) ? logDirs : [logDirs]
   const allMatches: string[] = []
 
-  // Convert to regex pattern with flexible whitespace
-  const pattern = messageToFlexiblePattern(userMessage)
+  // Convert to regex pattern with flexible whitespace for fast ripgrep
+  const flexiblePattern = messageToFlexiblePattern(userMessage)
 
   for (const logDir of dirs) {
     // Use **/*.jsonl to search nested directories (Codex uses YYYY/MM/DD structure)
     // Use -e for regex pattern instead of --fixed-strings
-    const args = ['rg', '-l', '-e', pattern]
+    const args = ['rg', '-l', '-e', flexiblePattern]
     if (rgThreads && rgThreads > 0) {
       args.push('--threads', String(rgThreads))
     }
@@ -268,7 +408,15 @@ export function findLogsWithExactMessage(
     }
   }
 
-  return Array.from(new Set(allMatches))
+  const uniqueMatches = Array.from(new Set(allMatches))
+
+  // Post-filter to exclude tool_result false positives
+  // Use progressive tail reading to handle large logs with lots of assistant output
+  const validMatches = uniqueMatches.filter((logPath) =>
+    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes ?? DEFAULT_LOG_TAIL_BYTES)
+  )
+
+  return validMatches.length > 0 ? validMatches : []
 }
 
 function findLogsWithExactMessageInPaths(
@@ -287,8 +435,8 @@ function findLogsWithExactMessageInPaths(
   const uniquePaths = Array.from(new Set(logPaths)).filter(Boolean)
   if (uniquePaths.length === 0) return []
 
-  const pattern = messageToFlexiblePattern(userMessage)
-  const regex = new RegExp(pattern, 'm')
+  // Use flexible pattern for fast ripgrep search
+  const flexiblePattern = messageToFlexiblePattern(userMessage)
 
   const tailMatches: string[] = []
   if (tailBytes > 0) {
@@ -300,7 +448,8 @@ function findLogsWithExactMessageInPaths(
         profile.tailReadMs += performance.now() - start
       }
       if (!tail) continue
-      if (regex.test(tail)) {
+      // Use context validation to filter out tool_result false positives
+      if (hasMessageInValidUserContext(tail, userMessage)) {
         tailMatches.push(logPath)
       }
     }
@@ -310,7 +459,8 @@ function findLogsWithExactMessageInPaths(
     return tailMatches
   }
 
-  const args = ['rg', '-l', '-e', pattern]
+  // Use flexible pattern for fast ripgrep (no PCRE2 needed)
+  const args = ['rg', '-l', '-e', flexiblePattern]
   if (rgThreads && rgThreads > 0) {
     args.push('--threads', String(rgThreads))
   }
@@ -324,12 +474,19 @@ function findLogsWithExactMessageInPaths(
   if (result.exitCode !== 0) {
     return tailMatches.length > 0 ? tailMatches : []
   }
-  const matches = result.stdout
+  const rgMatches = result.stdout
     .toString()
     .trim()
     .split('\n')
     .filter(Boolean)
-  return matches.length > 0 ? matches : tailMatches
+
+  // Post-filter ripgrep results to exclude tool_result false positives
+  // Use progressive tail reading to handle large logs with lots of assistant output
+  const validMatches = rgMatches.filter((logPath) =>
+    hasMessageInValidUserContextProgressive(logPath, userMessage, tailBytes)
+  )
+
+  return validMatches.length > 0 ? validMatches : tailMatches
 }
 
 interface ConversationPair {

@@ -12,6 +12,7 @@ import {
   extractRecentTraceLinesFromTmux,
   extractRecentUserMessagesFromTmux,
   extractActionFromUserAction,
+  hasMessageInValidUserContext,
 } from '../logMatcher'
 
 const bunAny = Bun as typeof Bun & { spawnSync: typeof Bun.spawnSync }
@@ -127,6 +128,17 @@ function buildPromptScrollback(
     .concat('\n')
 }
 
+/**
+ * Build a log entry in proper Claude/Codex format with "text" field.
+ * This format is required for the JSON field pattern matching.
+ */
+function buildUserLogEntry(message: string): string {
+  return JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: message }] }
+  })
+}
+
 beforeEach(() => {
   bunAny.spawnSync = ((args: string[]) => {
     if (args[0] === 'tmux' && args[1] === 'capture-pane') {
@@ -166,13 +178,11 @@ describe('logMatcher', () => {
     const logPathA = path.join(tempDir, 'session-a.jsonl')
     const logPathB = path.join(tempDir, 'session-b.jsonl')
     const messages = ['alpha one', 'alpha two', 'alpha three']
-    const logALines = messages.map((message) =>
-      JSON.stringify({ type: 'user', content: message })
-    )
+    const logALines = messages.map((message) => buildUserLogEntry(message))
     const logBLines = [
-      JSON.stringify({ type: 'user', content: messages[0] }),
-      JSON.stringify({ type: 'user', content: messages[2] }),
-      JSON.stringify({ type: 'user', content: messages[1] }),
+      buildUserLogEntry(messages[0]),
+      buildUserLogEntry(messages[2]),
+      buildUserLogEntry(messages[1]),
     ]
 
     await fs.writeFile(logPathA, logALines.join('\n'))
@@ -190,7 +200,7 @@ describe('logMatcher', () => {
     const logPath = path.join(tempDir, 'session.jsonl')
     const message = 'decorated claude prompt'
 
-    await fs.writeFile(logPath, JSON.stringify({ type: 'user', content: message }))
+    await fs.writeFile(logPath, buildUserLogEntry(message))
     setTmuxOutput(
       'agentboard:1',
       buildPromptScrollback([message], { prefix: '> ' })
@@ -206,7 +216,7 @@ describe('logMatcher', () => {
     const logPath = path.join(tempDir, 'session.jsonl')
     const message = 'decorated codex prompt'
 
-    await fs.writeFile(logPath, JSON.stringify({ type: 'user', content: message }))
+    await fs.writeFile(logPath, buildUserLogEntry(message))
     setTmuxOutput(
       'agentboard:1',
       buildPromptScrollback([message], { prefix: '* ', glyph: '›' })
@@ -265,11 +275,11 @@ describe('logMatcher', () => {
 
     await fs.writeFile(
       logPathA,
-      messagesA.map((message) => JSON.stringify({ type: 'user', content: message })).join('\n')
+      messagesA.map((message) => buildUserLogEntry(message)).join('\n')
     )
     await fs.writeFile(
       logPathB,
-      messagesB.map((message) => JSON.stringify({ type: 'user', content: message })).join('\n')
+      messagesB.map((message) => buildUserLogEntry(message)).join('\n')
     )
 
     const windows: Session[] = [
@@ -312,7 +322,7 @@ describe('logMatcher', () => {
 
     await fs.writeFile(
       logPath,
-      messages.map((m) => JSON.stringify({ type: 'user', content: m })).join('\n')
+      messages.map((m) => buildUserLogEntry(m)).join('\n')
     )
     setTmuxOutput('agentboard:1', buildPromptScrollback(messages))
 
@@ -329,7 +339,7 @@ describe('logMatcher', () => {
     // Log has different content than the tmux window
     await fs.writeFile(
       logPath,
-      JSON.stringify({ type: 'user', content: 'log content here' })
+      buildUserLogEntry('log content here')
     )
     setTmuxOutput('agentboard:1', buildPromptScrollback(['different window content']))
 
@@ -345,7 +355,7 @@ describe('logMatcher', () => {
 
     await fs.writeFile(
       logPath,
-      JSON.stringify({ type: 'user', content: 'some content' })
+      buildUserLogEntry('some content')
     )
     setTmuxOutput('agentboard:1', '') // Empty terminal
 
@@ -364,7 +374,7 @@ describe('logMatcher', () => {
     // JSON.stringify escapes quotes as \" in the log file
     await fs.writeFile(
       logPath,
-      JSON.stringify({ type: 'user', content: messageWithQuotes })
+      buildUserLogEntry(messageWithQuotes)
     )
     // Terminal shows unescaped quotes
     setTmuxOutput('agentboard:1', buildPromptScrollback([messageWithQuotes]))
@@ -488,5 +498,222 @@ describe('extractActionFromUserAction', () => {
   test('handles case-insensitive matching', () => {
     const xml = '<USER_ACTION><action>test</action></USER_ACTION>'
     expect(extractActionFromUserAction(xml)).toBe('test')
+  })
+})
+
+describe('hasMessageInValidUserContext', () => {
+  describe('positive cases - should match', () => {
+    test('matches Claude format with "text" field', () => {
+      const claudeLog = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"scaffold the xcode project"}]}}'
+      expect(hasMessageInValidUserContext(claudeLog, 'scaffold the xcode project')).toBe(true)
+    })
+
+    test('matches Claude format with direct "content" string (no tool_result)', () => {
+      const claudeLog = '{"type":"user","message":{"role":"user","content":"scaffold the xcode project"}}'
+      expect(hasMessageInValidUserContext(claudeLog, 'scaffold the xcode project')).toBe(true)
+    })
+
+    test('matches user message containing tool_result substring', () => {
+      const claudeLog =
+        '{"type":"user","message":{"role":"user","content":"please explain tool_result semantics"}}'
+      expect(hasMessageInValidUserContext(claudeLog, 'explain tool_result')).toBe(true)
+    })
+
+    test('matches Codex response_item format with "text" field', () => {
+      const codexLog = '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"help me debug this"}]}}'
+      expect(hasMessageInValidUserContext(codexLog, 'help me debug this')).toBe(true)
+    })
+
+    test('matches Codex event_msg format with "message" field', () => {
+      const codexLog = '{"type":"event_msg","payload":{"type":"user_message","message":"can you fix the bug"}}'
+      expect(hasMessageInValidUserContext(codexLog, 'can you fix the bug')).toBe(true)
+    })
+
+    test('matches message with flexible whitespace', () => {
+      // Log has multiple spaces, pattern should still match
+      const logLine = '{"text":"hello    world"}'
+      expect(hasMessageInValidUserContext(logLine, 'hello world')).toBe(true)
+    })
+
+    test('matches message with escaped quotes in JSON', () => {
+      // JSON escapes quotes as \"
+      const logLine = '{"text":"why is it \\"working\\""}'
+      expect(hasMessageInValidUserContext(logLine, 'why is it "working"')).toBe(true)
+    })
+
+    test('matches message preceded by other content in same JSON string', () => {
+      const logLine = '{"text":"prefix content and the actual message here"}'
+      expect(hasMessageInValidUserContext(logLine, 'the actual message')).toBe(true)
+    })
+
+    test('matches when message contains special regex characters', () => {
+      const logLine = '{"text":"what does (foo|bar) mean?"}'
+      expect(hasMessageInValidUserContext(logLine, 'what does (foo|bar) mean?')).toBe(true)
+    })
+  })
+
+  describe('negative cases - should NOT match', () => {
+    test('does not match tool_result content field (terminal capture)', () => {
+      // This is a tool_result that captured terminal output
+      const toolResult = '{"type":"user","message":{"role":"user","content":[{"tool_use_id":"123","type":"tool_result","content":"=== TERMINAL ===\\n❯ scaffold the xcode project"}]}}'
+      expect(hasMessageInValidUserContext(toolResult, 'scaffold the xcode project')).toBe(false)
+    })
+
+    test('does not match top-level toolUseResult content', () => {
+      const toolUseResult = JSON.stringify({
+        type: 'user',
+        toolUseResult: {
+          type: 'text',
+          file: {
+            content: '=== TERMINAL ===\n❯ scaffold the xcode project',
+            filePath: '/tmp/output.txt',
+            startLine: 1,
+            numLines: 2,
+            totalLines: 2,
+          },
+        },
+      })
+      expect(hasMessageInValidUserContext(toolUseResult, 'scaffold the xcode project')).toBe(false)
+    })
+
+    test('does not match Codex custom_tool_call_output content', () => {
+      const toolOutput = JSON.stringify({
+        type: 'event',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_123',
+          output: '❯ implement the feature',
+        },
+      })
+      expect(hasMessageInValidUserContext(toolOutput, 'implement the feature')).toBe(false)
+    })
+
+    test('does not match message appearing outside JSON structure', () => {
+      const plainText = 'just some random text in a file'
+      expect(hasMessageInValidUserContext(plainText, 'random text')).toBe(false)
+    })
+
+    test('does not match message in wrong field name', () => {
+      const logLine = '{"data":"important data"}'
+      expect(hasMessageInValidUserContext(logLine, 'important data')).toBe(false)
+    })
+
+    test('does not match message in "description" field', () => {
+      const logLine = '{"description":"fix the bug please"}'
+      expect(hasMessageInValidUserContext(logLine, 'fix the bug')).toBe(false)
+    })
+  })
+
+  describe('edge cases', () => {
+    test('handles empty message', () => {
+      const logLine = '{"text":""}'
+      // Should not throw
+      expect(() => hasMessageInValidUserContext(logLine, '')).not.toThrow()
+    })
+
+    test('handles message with newlines (JSON-escaped)', () => {
+      // JSON newlines are \n in the string
+      const logLine = '{"text":"line one\\nline two"}'
+      expect(hasMessageInValidUserContext(logLine, 'line one')).toBe(true)
+    })
+
+    test('handles message that looks like JSON', () => {
+      // User actually typed something that looks like JSON
+      const logLine = '{"text":"set \\"text\\": \\"value\\""}'
+      expect(hasMessageInValidUserContext(logLine, 'set "text": "value"')).toBe(true)
+    })
+
+    test('handles unicode in message', () => {
+      const logLine = '{"text":"hello 世界 🌍"}'
+      expect(hasMessageInValidUserContext(logLine, 'hello 世界 🌍')).toBe(true)
+    })
+
+    test('works with multiline log content', () => {
+      const multilineLog = `{"type":"assistant","text":"some response"}
+{"type":"user","text":"user request"}
+{"type":"assistant","text":"another response"}`
+      expect(hasMessageInValidUserContext(multilineLog, 'user request')).toBe(true)
+    })
+  })
+})
+
+describe('integration: JSON field pattern filters terminal captures', () => {
+  test('tryExactMatchWindowToLog excludes logs with message only in tool_result', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-toolresult-'))
+
+    // Log A: has message as actual user message
+    const logPathA = path.join(tempDir, 'session-a.jsonl')
+    // Log B: has same message but only inside a tool_result (terminal capture)
+    const logPathB = path.join(tempDir, 'session-b.jsonl')
+
+    const userMessage = 'implement the feature'
+
+    // Log A: proper user message
+    await fs.writeFile(
+      logPathA,
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'text', text: userMessage }] }
+      })
+    )
+
+    // Log B: message appears only in tool_result (terminal capture from another window)
+    await fs.writeFile(
+      logPathB,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{
+            tool_use_id: 'tool_123',
+            type: 'tool_result',
+            content: `=== TERMINAL CAPTURE ===\n❯ ${userMessage}\n⏺ Working on it...`
+          }]
+        }
+      })
+    )
+
+    setTmuxOutput('agentboard:1', buildPromptScrollback([userMessage]))
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    // Should match Log A (actual user message), not Log B (terminal capture)
+    expect(result?.logPath).toBe(logPathA)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('tryExactMatchWindowToLog matches correct log when both have message in different contexts', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentboard-context-'))
+
+    const logPathCorrect = path.join(tempDir, 'correct.jsonl')
+    const logPathWrong = path.join(tempDir, 'wrong.jsonl')
+
+    const messages = ['first message', 'second message', 'third message']
+
+    // Correct log: has all messages as actual user messages
+    const correctLines = messages.map(msg =>
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: msg }] } })
+    )
+    await fs.writeFile(logPathCorrect, correctLines.join('\n'))
+
+    // Wrong log: has messages inside tool_result (captured terminal)
+    const wrongLine = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          content: messages.map(m => `❯ ${m}`).join('\n')
+        }]
+      }
+    })
+    await fs.writeFile(logPathWrong, wrongLine)
+
+    setTmuxOutput('agentboard:1', buildPromptScrollback(messages))
+
+    const result = tryExactMatchWindowToLog('agentboard:1', tempDir)
+    expect(result?.logPath).toBe(logPathCorrect)
+
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 })

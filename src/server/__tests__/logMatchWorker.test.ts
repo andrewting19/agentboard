@@ -37,6 +37,18 @@ function buildPromptScrollback(
     .concat('\n')
 }
 
+/**
+ * Build a log entry in proper Claude/Codex format with "text" field.
+ * This format is required for the JSON field pattern matching.
+ */
+function buildUserLogEntry(message: string, extra: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    ...extra,
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: message }] }
+  })
+}
+
 function findJsonlFiles(dir: string): string[] {
   const results: string[] = []
   if (!fsSync.existsSync(dir)) return results
@@ -208,7 +220,7 @@ describe('logMatchWorker', () => {
     const logPath = path.join(logDir, 'session-1.jsonl')
     await fs.writeFile(
       logPath,
-      JSON.stringify({ sessionId: 'session-1', cwd: '/tmp/alpha', type: 'user', content: 'hello' })
+      buildUserLogEntry('hello', { sessionId: 'session-1', cwd: '/tmp/alpha' })
     )
 
     ctx.onmessage?.({
@@ -244,7 +256,7 @@ describe('logMatchWorker', () => {
     const message = 'alpha one'
     await fs.writeFile(
       logPath,
-      JSON.stringify({ sessionId: 'session-2', cwd: '/tmp/alpha', type: 'user', content: message })
+      buildUserLogEntry(message, { sessionId: 'session-2', cwd: '/tmp/alpha' })
     )
 
     setTmuxOutput('agentboard:1', buildPromptScrollback([message]))
@@ -274,7 +286,7 @@ describe('logMatchWorker', () => {
     const logPath = path.join(logDir, 'session-3.jsonl')
     await fs.writeFile(
       logPath,
-      JSON.stringify({ sessionId: 'session-3', cwd: '/tmp/alpha', type: 'user', content: 'boom' })
+      buildUserLogEntry('boom', { sessionId: 'session-3', cwd: '/tmp/alpha' })
     )
 
     bunAny.spawnSync = (() => {

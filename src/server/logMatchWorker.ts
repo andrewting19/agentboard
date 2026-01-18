@@ -285,7 +285,6 @@ if (ctx) {
     if (!payload || !payload.id) {
       return
     }
-
     const response = handleMatchWorkerRequest(payload)
     ctx.postMessage(response)
   }
