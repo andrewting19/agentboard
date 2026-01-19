@@ -776,21 +776,23 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
       layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
-      initial={prefersReducedMotion ? false : { opacity: 0, height: 0, scale: 0.95 }}
+      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.97 }}
       animate={
         prefersReducedMotion
-          ? { opacity: 1, height: 'auto' }
+          ? { opacity: 1 }
           : isNew
-            ? { opacity: 1, height: 'auto', scale: [1.02, 0.99, 1] }
-            : { opacity: 1, height: 'auto', scale: 1 }
+            ? { opacity: 1, scale: [1.02, 0.99, 1] }
+            : { opacity: 1, scale: 1 }
       }
-      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, scale: 0.95 }}
+      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, scale: 0.97 }}
       transition={prefersReducedMotion ? { duration: 0 } : {
         // Layout should respond immediately to reflow, not wait for entry delay
         layout: { type: 'spring', stiffness: 500, damping: 35 },
-        height: { duration: exitDuration / 1000, ease: 'easeOut', delay: isExiting ? 0 : entryDelay },
         opacity: { duration: exitDuration / 1000, delay: isExiting ? 0 : entryDelay },
         scale: { duration: 0.3, ease: [0.34, 1.56, 0.64, 1], delay: isExiting ? 0 : entryDelay },
+        ...(isExiting
+          ? { height: { duration: exitDuration / 1000, ease: 'easeOut' } }
+          : {}),
       }}
       {...(isExiting ? {} : attributes)}
       {...(isExiting ? {} : listeners)}
@@ -850,7 +852,10 @@ function SessionRow({
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
   const inputRef = useRef<HTMLInputElement>(null)
-  const displayName = session.agentSessionName || session.name
+  const displayName =
+    session.agentSessionName?.trim() ||
+    session.name?.trim() ||
+    session.id
   const [editValue, setEditValue] = useState(displayName)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const directoryLeaf = getPathLeaf(session.projectPath)
