@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useReducer, useCallback, useMemo, forwardRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   DndContext,
@@ -720,7 +720,7 @@ interface SortableSessionItemProps {
   onRename: (newName: string) => void
 }
 
-function SortableSessionItem({
+const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>(function SortableSessionItem({
   session,
   isNew,
   isExiting,
@@ -738,7 +738,7 @@ function SortableSessionItem({
   onStartEdit,
   onCancelEdit,
   onRename,
-}: SortableSessionItemProps) {
+}, ref) {
   const {
     attributes,
     listeners,
@@ -756,9 +756,23 @@ function SortableSessionItem({
     opacity: isDragging ? 0.9 : undefined,
   }
 
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!isExiting) {
+        setNodeRef(node)
+      }
+      if (typeof ref === 'function') {
+        ref(node)
+      } else if (ref) {
+        ref.current = node
+      }
+    },
+    [isExiting, setNodeRef, ref],
+  )
+
   return (
     <motion.div
-      ref={isExiting ? undefined : setNodeRef}
+      ref={setRefs}
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
       layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
@@ -803,7 +817,9 @@ function SortableSessionItem({
       )}
     </motion.div>
   )
-}
+})
+
+SortableSessionItem.displayName = 'SortableSessionItem'
 
 interface SessionRowProps {
   session: Session
