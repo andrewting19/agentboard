@@ -57,6 +57,7 @@ describe('useVisualViewport', () => {
 
     globalAny.window = {
       innerHeight: 900,
+      screen: { height: 900 },
       visualViewport: viewport,
     } as unknown as Window & typeof globalThis
 

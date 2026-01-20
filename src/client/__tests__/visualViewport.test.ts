@@ -26,7 +26,7 @@ describe('visual viewport helpers', () => {
     const doc = {
       documentElement: { style, classList },
     } as unknown as Document
-    const win = { innerHeight: 900 } as Window
+    const win = { innerHeight: 900, screen: { height: 900 } } as Window
     const viewport = { height: 700, width: 800 } as VisualViewport
 
     const updated = updateKeyboardInset({ viewport, win, doc })
@@ -51,7 +51,7 @@ describe('visual viewport helpers', () => {
     const doc = {
       documentElement: { style: { setProperty: () => {} } },
     } as unknown as Document
-    const win = { innerHeight: 900 } as Window
+    const win = { innerHeight: 900, screen: { height: 900 } } as Window
 
     expect(updateKeyboardInset({ viewport: null, win, doc })).toBe(false)
   })
@@ -67,7 +67,7 @@ describe('visual viewport helpers', () => {
     const doc = {
       documentElement: { style, classList },
     } as unknown as Document
-    const win = { innerHeight: 600 } as Window
+    const win = { innerHeight: 600, screen: { height: 600 } } as Window
     const viewport = { height: 800, width: 900 } as VisualViewport
 
     const updated = updateKeyboardInset({ viewport, win, doc })
@@ -90,7 +90,7 @@ describe('visual viewport helpers', () => {
     const doc = {
       documentElement: { style, classList },
     } as unknown as Document
-    const win = { innerHeight: 900 } as Window
+    const win = { innerHeight: 900, screen: { height: 900 } } as Window
 
     // Below threshold (100px) - not visible
     updateKeyboardInset({ viewport: { height: 850, width: 800 } as VisualViewport, win, doc })
@@ -112,7 +112,7 @@ describe('visual viewport helpers', () => {
     const doc = {
       documentElement: { style, classList },
     } as unknown as Document
-    const win = { innerHeight: 900 } as Window
+    const win = { innerHeight: 900, screen: { height: 900 } } as Window
     const viewport = { height: 600, width: 700, offsetTop: 100, offsetLeft: 20 } as VisualViewport
 
     const updated = updateKeyboardInset({ viewport, win, doc })

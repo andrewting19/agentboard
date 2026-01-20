@@ -870,8 +870,7 @@ export default function Terminal({
     if (!a11yRoot || !a11yTree) return
 
     const updatePointerEvents = () => {
-      const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
-      const keyboardVisible = textarea ? document.activeElement === textarea : false
+      const keyboardVisible = isKeyboardVisible()
       if (keyboardVisible && !isSelectingTextRef.current) {
         a11yRoot.style.pointerEvents = 'none'
         a11yTree.style.pointerEvents = 'none'
@@ -889,7 +888,7 @@ export default function Terminal({
       document.removeEventListener('focusin', updatePointerEvents)
       document.removeEventListener('focusout', updatePointerEvents)
     }
-  }, [containerRef, isiOS, isSelectingText])
+  }, [containerRef, isiOS, isSelectingText, isKeyboardVisible])
 
   return (
     <section

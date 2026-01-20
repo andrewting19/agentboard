@@ -24,7 +24,12 @@ export function updateKeyboardInset({
 
   const offsetTop = Math.max(0, viewport.offsetTop || 0)
   const offsetLeft = Math.max(0, viewport.offsetLeft || 0)
-  const keyboardHeight = win.innerHeight - (viewport.height + offsetTop)
+  const docHeight =
+    typeof doc.documentElement?.clientHeight === 'number'
+      ? doc.documentElement.clientHeight
+      : 0
+  const baseHeight = Math.max(0, win.innerHeight, docHeight)
+  const keyboardHeight = baseHeight - (viewport.height + offsetTop)
   const clampedKeyboardHeight = Math.max(0, keyboardHeight)
   const viewportHeight = Math.max(0, viewport.height || 0)
   const viewportWidth = Math.max(0, viewport.width || 0)
@@ -166,6 +171,10 @@ export function useVisualViewport() {
       syncActiveState()
     }
 
+    const handleOrientationChange = () => {
+      startRafBurst()
+    }
+
     // Initial update
     updateViewport()
     syncActiveState()
@@ -176,7 +185,7 @@ export function useVisualViewport() {
     viewport.addEventListener('scroll', updateViewport)
     if (typeof window.addEventListener === 'function') {
       window.addEventListener('resize', updateViewport)
-      window.addEventListener('orientationchange', startRafBurst)
+      window.addEventListener('orientationchange', handleOrientationChange)
     }
     if (typeof document.addEventListener === 'function') {
       document.addEventListener('focusin', handleFocusIn)
@@ -190,7 +199,7 @@ export function useVisualViewport() {
       viewport.removeEventListener('scroll', updateViewport)
       if (typeof window.removeEventListener === 'function') {
         window.removeEventListener('resize', updateViewport)
-        window.removeEventListener('orientationchange', startRafBurst)
+        window.removeEventListener('orientationchange', handleOrientationChange)
       }
       if (typeof document.removeEventListener === 'function') {
         document.removeEventListener('focusin', handleFocusIn)
