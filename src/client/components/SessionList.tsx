@@ -785,13 +785,13 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
       ref={setRefs}
       style={{ ...style, overflow: 'hidden' }}
       className="relative"
-      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting}
+      layout={!prefersReducedMotion && !isDragging && !layoutAnimationsDisabled && !isExiting && !isNew}
       transformTemplate={(_, generatedTransform) => {
         if (!dndTransform) return generatedTransform
         if (!generatedTransform || generatedTransform === 'none') return dndTransform
         return `${dndTransform} ${generatedTransform}`
       }}
-      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.97 }}
+      initial={prefersReducedMotion || !isNew ? false : { opacity: 0, scale: 0.97 }}
       animate={
         prefersReducedMotion
           ? { opacity: 1 }
