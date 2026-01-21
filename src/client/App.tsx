@@ -335,6 +335,13 @@ export default function App() {
     sendMessage({ type: 'session-rename', sessionId, newName })
   }
 
+  const handleDuplicateSession = useCallback((sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId)
+    if (session) {
+      sendMessage({ type: 'session-create', projectPath: session.projectPath, command: session.command })
+    }
+  }, [sessions, sendMessage])
+
   // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -369,6 +376,7 @@ export default function App() {
           onRename={handleRenameSession}
           onResume={handleResumeSession}
           onKill={handleKillSession}
+          onDuplicate={handleDuplicateSession}
           onOpenSettings={handleOpenSettings}
           loading={!hasLoaded}
           error={connectionError || serverError}

@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { HandIcon, XCloseIcon } from '@untitledui-icons/react/line'
+import Copy01Icon from '@untitledui-icons/react/line/esm/Copy01Icon'
 import ChevronDownIcon from '@untitledui-icons/react/line/esm/ChevronDownIcon'
 import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
@@ -45,6 +46,7 @@ interface SessionListProps {
   onRename: (sessionId: string, newName: string) => void
   onResume?: (sessionId: string) => void
   onKill?: (sessionId: string) => void
+  onDuplicate?: (sessionId: string) => void
   onOpenSettings?: () => void
 }
 
@@ -74,6 +76,7 @@ export default function SessionList({
   onRename,
   onResume,
   onKill,
+  onDuplicate,
   onOpenSettings,
 }: SessionListProps) {
   useTimestampRefresh()
@@ -605,6 +608,7 @@ export default function SessionList({
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
                         onKill={onKill ? () => onKill(session.id) : undefined}
+                        onDuplicate={onDuplicate ? () => onDuplicate(session.id) : undefined}
                         onOpenSettings={onOpenSettings}
                       />
                     )
@@ -732,6 +736,7 @@ interface SortableSessionItemProps {
   onCancelEdit: () => void
   onRename: (newName: string) => void
   onKill?: () => void
+  onDuplicate?: () => void
   onOpenSettings?: () => void
 }
 
@@ -754,6 +759,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   onCancelEdit,
   onRename,
   onKill,
+  onDuplicate,
   onOpenSettings,
 }, ref) {
   const {
@@ -841,6 +847,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         onCancelEdit={onCancelEdit}
         onRename={onRename}
         onKill={onKill}
+        onDuplicate={onDuplicate}
         onOpenSettings={onOpenSettings}
       />
       {dropIndicator === 'below' && (
@@ -865,6 +872,7 @@ interface SessionRowProps {
   onCancelEdit: () => void
   onRename: (newName: string) => void
   onKill?: () => void
+  onDuplicate?: () => void
   onOpenSettings?: () => void
 }
 
@@ -881,6 +889,7 @@ function SessionRow({
   onCancelEdit,
   onRename,
   onKill,
+  onDuplicate,
   onOpenSettings,
 }: SessionRowProps) {
   const lastActivity = formatRelativeTime(session.lastActivity)
@@ -1111,6 +1120,20 @@ function SessionRow({
             >
               <Settings01Icon width={14} height={14} />
               Settings
+            </button>
+          )}
+          {onDuplicate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setContextMenu(null)
+                onDuplicate()
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
+              role="menuitem"
+            >
+              <Copy01Icon width={14} height={14} />
+              Duplicate
             </button>
           )}
           {onKill && (
