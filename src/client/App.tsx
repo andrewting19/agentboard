@@ -5,6 +5,7 @@ import SessionList from './components/SessionList'
 import Terminal from './components/Terminal'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsModal from './components/SettingsModal'
+import { ToastViewport, toastManager } from './components/Toast'
 import { useSessionStore } from './stores/sessionStore'
 import {
   useSettingsStore,
@@ -185,6 +186,20 @@ export default function App() {
         setServerError(message.message)
         window.setTimeout(() => setServerError(null), 6000)
       }
+      if (message.type === 'session-pin-result') {
+        if (!message.ok && message.error) {
+          setServerError(message.error)
+          window.setTimeout(() => setServerError(null), 6000)
+        }
+      }
+      if (message.type === 'session-resurrection-failed') {
+        toastManager.add({
+          title: 'Session resurrection failed',
+          description: `"${message.displayName}" could not be resumed: ${message.error}`,
+          type: 'error',
+          timeout: 8000,
+        })
+      }
     })
 
     return () => { unsubscribe() }
@@ -342,6 +357,10 @@ export default function App() {
     }
   }, [sessions, sendMessage])
 
+  const handleSetPinned = useCallback((sessionId: string, isPinned: boolean) => {
+    sendMessage({ type: 'session-pin', sessionId, isPinned })
+  }, [sendMessage])
+
   // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -377,6 +396,7 @@ export default function App() {
           onResume={handleResumeSession}
           onKill={handleKillSession}
           onDuplicate={handleDuplicateSession}
+          onSetPinned={handleSetPinned}
           onOpenSettings={handleOpenSettings}
           loading={!hasLoaded}
           error={connectionError || serverError}
@@ -403,6 +423,7 @@ export default function App() {
         onRenameSession={handleRenameSession}
         onOpenSettings={handleOpenSettings}
         onResumeSession={handleResumeSession}
+        onSetPinned={handleSetPinned}
         inactiveSessions={agentSessions.inactive}
         loading={!hasLoaded}
         error={connectionError || serverError}
@@ -425,6 +446,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
       />
 
+      <ToastViewport />
     </div>
   )
 }

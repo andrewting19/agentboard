@@ -382,6 +382,8 @@ describe('LogPoller', () => {
       lastActivityAt: new Date(stats.mtime.getTime() - 1000).toISOString(),
       lastUserMessage: oldMessage,
       currentWindow: baseSession.tmuxWindow,
+      isPinned: false,
+      lastResumeError: null,
     })
 
     const poller = new LogPoller(db, registry, {
@@ -430,6 +432,8 @@ describe('LogPoller', () => {
       lastActivityAt: stats.mtime.toISOString(),
       lastUserMessage: null,
       currentWindow: null,
+      isPinned: false,
+      lastResumeError: null,
     })
 
     const poller = new LogPoller(db, registry, {

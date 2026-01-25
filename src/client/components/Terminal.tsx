@@ -24,6 +24,7 @@ interface TerminalProps {
   onKillSession: (sessionId: string) => void
   onRenameSession: (sessionId: string, newName: string) => void
   onResumeSession: (sessionId: string) => void
+  onSetPinned?: (sessionId: string, isPinned: boolean) => void
   onOpenSettings: () => void
   loading?: boolean
   error?: string | null
@@ -76,6 +77,7 @@ export default function Terminal({
   onKillSession,
   onRenameSession,
   onResumeSession,
+  onSetPinned,
   onOpenSettings,
   loading = false,
   error = null,
@@ -1110,6 +1112,7 @@ export default function Terminal({
           onSelect={onSelectSession}
           onRename={onRenameSession}
           onResume={onResumeSession}
+          onSetPinned={onSetPinned}
           onNewSession={onNewSession}
           loading={loading}
           error={error}

@@ -317,6 +317,7 @@ function hydrateSessionsWithAgentSessions(
       // Use persisted log times (survives server restarts, works when tmux lacks creation time)
       lastActivity: agentSession.lastActivityAt,
       createdAt: agentSession.createdAt,
+      isPinned: agentSession.isPinned,
     }
   })
 
@@ -438,6 +439,8 @@ logger.info('startup_state', {
 })
 
 refreshSessionsSync({ verifyAssociations: true }) // Sync for startup - ensures sessions are ready
+resurrectPinnedSessions() // Resurrect pinned sessions that lost their tmux windows
+refreshSessionsSync() // Re-hydrate after resurrection
 setInterval(refreshSessions, config.refreshIntervalMs) // Async for periodic
 if (config.logPollIntervalMs > 0) {
   logPoller.start(config.logPollIntervalMs)
@@ -858,6 +861,9 @@ function handleMessage(
     case 'session-resume':
       handleSessionResume(message, ws)
       return
+    case 'session-pin':
+      handleSessionPin(message.sessionId, message.isPinned, ws)
+      return
     default:
       send(ws, { type: 'error', message: 'Unknown message type' })
   }
@@ -951,6 +957,139 @@ function handleRename(
   }
 }
 
+function handleSessionPin(
+  sessionId: string,
+  isPinned: unknown,
+  ws: ServerWebSocket<WSData>
+) {
+  // Validate isPinned is actually a boolean
+  if (typeof isPinned !== 'boolean') {
+    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'isPinned must be a boolean' })
+    return
+  }
+
+  if (!isValidSessionId(sessionId)) {
+    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Invalid session id' })
+    return
+  }
+
+  const record = db.getSessionById(sessionId)
+  if (!record) {
+    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Session not found' })
+    return
+  }
+
+  // When pinning, also clear any previous resume error
+  const updated = isPinned
+    ? db.updateSession(sessionId, { isPinned: true, lastResumeError: null })
+    : db.setPinned(sessionId, false)
+  if (!updated) {
+    send(ws, { type: 'session-pin-result', sessionId, ok: false, error: 'Failed to update pin state' })
+    return
+  }
+
+  send(ws, { type: 'session-pin-result', sessionId, ok: true })
+
+  // Update all active sessions that match (in case of edge cases with multiple windows)
+  for (const session of registry.getAll()) {
+    if (session.agentSessionId === sessionId) {
+      registry.updateSession(session.id, { isPinned })
+    }
+  }
+
+  updateAgentSessions()
+}
+
+function resurrectPinnedSessions() {
+  const orphanedPinned = db.getPinnedOrphaned()
+  if (orphanedPinned.length === 0) {
+    return
+  }
+
+  logger.info('resurrect_pinned_sessions_start', { count: orphanedPinned.length })
+
+  for (const record of orphanedPinned) {
+    // Validate sessionId before using in command
+    if (!isValidSessionId(record.sessionId)) {
+      const errorMsg = 'Invalid session id format'
+      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
+      broadcast({
+        type: 'session-resurrection-failed',
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: errorMsg,
+      })
+      logger.error('resurrect_pinned_session_invalid_id', {
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+      })
+      continue
+    }
+
+    const resumeTemplate =
+      record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
+
+    // Validate template contains {sessionId} placeholder
+    if (!resumeTemplate.includes('{sessionId}')) {
+      const errorMsg = `Resume command template missing {sessionId} placeholder: ${resumeTemplate}`
+      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
+      broadcast({
+        type: 'session-resurrection-failed',
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: errorMsg,
+      })
+      logger.error('resurrect_pinned_session_invalid_template', {
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        template: resumeTemplate,
+      })
+      continue
+    }
+
+    const command = resumeTemplate.replace('{sessionId}', record.sessionId)
+    const projectPath =
+      record.projectPath ||
+      process.env.HOME ||
+      process.env.USERPROFILE ||
+      '.'
+
+    try {
+      const created = sessionManager.createWindow(
+        projectPath,
+        record.displayName,
+        command,
+        { excludeSessionId: record.sessionId }
+      )
+      db.updateSession(record.sessionId, {
+        currentWindow: created.tmuxWindow,
+        displayName: created.name,
+        lastResumeError: null, // Clear any previous error on success
+      })
+      logger.info('resurrect_pinned_session_success', {
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        tmuxWindow: created.tmuxWindow,
+      })
+    } catch (error) {
+      // Resurrection failed - unpin the session and persist error
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      db.updateSession(record.sessionId, { isPinned: false, lastResumeError: errorMsg })
+      broadcast({
+        type: 'session-resurrection-failed',
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: errorMsg,
+      })
+      logger.error('resurrect_pinned_session_failed', {
+        sessionId: record.sessionId,
+        displayName: record.displayName,
+        error: errorMsg,
+      })
+    }
+  }
+}
+
 function handleSessionResume(
   message: Extract<ClientMessage, { type: 'session-resume' }>,
   ws: ServerWebSocket<WSData>
@@ -983,6 +1122,17 @@ function handleSessionResume(
 
   const resumeTemplate =
     record.agentType === 'claude' ? config.claudeResumeCmd : config.codexResumeCmd
+
+  // Validate template contains {sessionId} placeholder
+  if (!resumeTemplate.includes('{sessionId}')) {
+    const error: ResumeError = {
+      code: 'RESUME_FAILED',
+      message: `Resume command template missing {sessionId} placeholder`,
+    }
+    send(ws, { type: 'session-resume-result', sessionId, ok: false, error })
+    return
+  }
+
   const command = resumeTemplate.replace('{sessionId}', sessionId)
   const projectPath =
     record.projectPath ||
@@ -1000,6 +1150,7 @@ function handleSessionResume(
     db.updateSession(sessionId, {
       currentWindow: created.tmuxWindow,
       displayName: created.name,
+      lastResumeError: null, // Clear any previous error on success
     })
     // Add session to registry immediately so terminal can attach
     // (async refresh will update with any additional data later)

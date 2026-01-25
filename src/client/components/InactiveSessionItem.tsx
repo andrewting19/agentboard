@@ -1,3 +1,5 @@
+import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
+import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession } from '@shared/types'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
@@ -69,6 +71,20 @@ export default function InactiveSessionItem({
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary">
             {displayName}
           </span>
+          {session.lastResumeError && (
+            <AlertTriangleIcon
+              className="h-3 w-3 shrink-0 text-amber-500"
+              aria-label="Resume failed"
+              title={`Last resume failed: ${session.lastResumeError}`}
+            />
+          )}
+          {session.isPinned && (
+            <Pin02Icon
+              className="h-3 w-3 shrink-0 text-muted"
+              aria-label="Pinned"
+              title="Pinned - will auto-resume on server restart"
+            />
+          )}
           {sessionIdPrefix && (
             <span
               className="shrink-0 text-[11px] font-mono text-muted"

@@ -24,6 +24,7 @@ export interface Session {
   agentSessionId?: string
   agentSessionName?: string
   lastUserMessage?: string
+  isPinned?: boolean
 }
 
 export interface AgentSession {
@@ -36,6 +37,8 @@ export interface AgentSession {
   lastActivityAt: string
   isActive: boolean
   lastUserMessage?: string
+  isPinned?: boolean
+  lastResumeError?: string
 }
 
 // Directory browser types
@@ -65,6 +68,8 @@ export type ServerMessage =
   | { type: 'session-orphaned'; session: AgentSession }
   | { type: 'session-activated'; session: AgentSession; window: string }
   | { type: 'session-resume-result'; sessionId: string; ok: boolean; session?: Session; error?: ResumeError }
+  | { type: 'session-pin-result'; sessionId: string; ok: boolean; error?: string }
+  | { type: 'session-resurrection-failed'; sessionId: string; displayName: string; error: string }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | {
       type: 'terminal-error'
@@ -99,3 +104,4 @@ export type ClientMessage =
   | { type: 'session-refresh' }
   | { type: 'tmux-cancel-copy-mode'; sessionId: string }
   | { type: 'session-resume'; sessionId: string; name?: string }
+  | { type: 'session-pin'; sessionId: string; isPinned: boolean }
