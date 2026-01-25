@@ -70,6 +70,8 @@ TERMINAL_MODE=pty
 TERMINAL_MONITOR_TARGETS=true
 VITE_ALLOWED_HOSTS=nuc,myserver
 AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
+AGENTBOARD_INACTIVE_MAX_AGE_HOURS=24
+AGENTBOARD_EXCLUDE_PROJECTS=<empty>,/workspace
 ```
 
 `HOSTNAME` controls which interfaces the server binds to (default `0.0.0.0` for network access; use `127.0.0.1` for local-only).
@@ -85,6 +87,10 @@ AGENTBOARD_DB_PATH=~/.agentboard/agentboard.db
 `VITE_ALLOWED_HOSTS` allows access to the Vite dev server from other hostnames. Useful with Tailscale MagicDNS - add your machine name (e.g., `nuc`) to access the dev server at `http://nuc:5173` from other devices on your tailnet.
 
 Session data (log-to-window mappings) is stored in `~/.agentboard/agentboard.db`. Override with `AGENTBOARD_DB_PATH`.
+
+`AGENTBOARD_INACTIVE_MAX_AGE_HOURS` limits inactive sessions shown in the UI to those with recent activity (default: 24 hours). Older sessions remain in the database but are not displayed or processed for orphan rematch.
+
+`AGENTBOARD_EXCLUDE_PROJECTS` filters out sessions from specific project directories (comma-separated). Use `<empty>` to exclude sessions with no project path. Useful for hiding automated/spam sessions.
 
 ## Troubleshooting
 

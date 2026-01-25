@@ -84,13 +84,19 @@ export default function SessionList({
   const showInactive = useSettingsStore((state) => state.inactiveSessionsExpanded)
   const setShowInactive = useSettingsStore((state) => state.setInactiveSessionsExpanded)
   const [previewSession, setPreviewSession] = useState<AgentSession | null>(null)
+  const [inactiveLimit, setInactiveLimit] = useState(20)
   const prefersReducedMotion = useReducedMotion()
+
+  // Reset pagination when inactive panel is collapsed
+  useEffect(() => {
+    if (!showInactive) {
+      setInactiveLimit(20)
+    }
+  }, [showInactive])
 
   // Animation sequencing constants (in ms)
   const EXIT_DURATION = 200
   const COUNTER_DELAY = EXIT_DURATION
-  const COUNTER_DURATION = 300
-  const ENTRY_DELAY = COUNTER_DELAY + COUNTER_DURATION
 
   // Track counts for counter animations
   const prevActiveCountRef = useRef(sessions.length)
@@ -134,12 +140,10 @@ export default function SessionList({
 
   // Track newly added sessions for entry animations
   const prevActiveIdsRef = useRef<Set<string>>(new Set(sessions.map((s) => s.id)))
-  const prevInactiveIdsRef = useRef<Set<string>>(new Set(inactiveSessions.map((s) => s.sessionId)))
   const prevInactiveIdsForActiveRef = useRef<Set<string>>(
     new Set(inactiveSessions.map((s) => s.sessionId))
   )
   const [newlyActiveIds, setNewlyActiveIds] = useState<Set<string>>(new Set())
-  const [newlyInactiveIds, setNewlyInactiveIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const currentIds = new Set(sessions.map((s) => s.id))
@@ -172,23 +176,6 @@ export default function SessionList({
     }
   }, [sessions, inactiveSessions])
 
-  useEffect(() => {
-    const currentIds = new Set(inactiveSessions.map((s) => s.sessionId))
-    const newIds = new Set<string>()
-    for (const id of currentIds) {
-      if (!prevInactiveIdsRef.current.has(id)) {
-        newIds.add(id)
-      }
-    }
-    prevInactiveIdsRef.current = currentIds
-
-    if (newIds.size > 0) {
-      setNewlyInactiveIds(newIds)
-      // Cleanup after animation completes: ENTRY_DELAY (500ms) + animation duration (400ms)
-      const timer = setTimeout(() => setNewlyInactiveIds(new Set()), ENTRY_DELAY + 400)
-      return () => clearTimeout(timer)
-    }
-  }, [inactiveSessions, ENTRY_DELAY])
   const shortcutModifier = useSettingsStore((state) => state.shortcutModifier)
   const modDisplay = getModifierDisplay(getEffectiveModifier(shortcutModifier))
   const sessionSortMode = useSettingsStore((state) => state.sessionSortMode)
@@ -643,54 +630,31 @@ export default function SessionList({
                 {filteredInactiveSessions.length}
               </motion.span>
             </button>
-            <AnimatePresence initial={false}>
-              {showInactive && (
-                <motion.div
-                  className="py-1 overflow-hidden"
-                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {filteredInactiveSessions.map((session) => {
-                    const isNew = newlyInactiveIds.has(session.sessionId)
-                    // Delay entry animation for cards transitioning from active
-                    const entryDelay = isNew ? ENTRY_DELAY / 1000 : 0
-                    return (
-                    <motion.div
-                      key={session.sessionId}
-                      initial={
-                        prefersReducedMotion || !isNew
-                          ? false
-                          : { opacity: 0, y: -16, scale: 0.85 }
-                      }
-                      animate={
-                        prefersReducedMotion
-                          ? { opacity: 1, y: 0 }
-                          : isNew
-                            ? { opacity: 1, y: 0, scale: [1.06, 0.98, 1] }
-                            : { opacity: 1, y: 0, scale: 1 }
-                      }
-                      transition={{
-                        duration: 0.3,
-                        delay: entryDelay,
-                        scale: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1], delay: entryDelay },
-                      }}
-                    >
-                      <InactiveSessionItem
-                        session={session}
-                        showSessionIdPrefix={showSessionIdPrefix}
-                        showProjectName={showProjectName}
-                        showLastUserMessage={showLastUserMessage}
-                        onResume={(sessionId) => onResume?.(sessionId)}
-                        onPreview={setPreviewSession}
-                        onSetPinned={onSetPinned}
-                      />
-                    </motion.div>
-                  )})}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {showInactive && (
+              <div className="py-1">
+                {filteredInactiveSessions.slice(0, inactiveLimit).map((session) => (
+                  <InactiveSessionItem
+                    key={session.sessionId}
+                    session={session}
+                    showSessionIdPrefix={showSessionIdPrefix}
+                    showProjectName={showProjectName}
+                    showLastUserMessage={showLastUserMessage}
+                    onResume={(sessionId) => onResume?.(sessionId)}
+                    onPreview={setPreviewSession}
+                    onSetPinned={onSetPinned}
+                  />
+                ))}
+                {filteredInactiveSessions.length > inactiveLimit && (
+                  <button
+                    type="button"
+                    onClick={() => setInactiveLimit((prev) => prev + 20)}
+                    className="w-full px-3 py-2 text-center text-xs text-muted hover:text-primary hover:bg-hover"
+                  >
+                    Show more ({filteredInactiveSessions.length - inactiveLimit} remaining)
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

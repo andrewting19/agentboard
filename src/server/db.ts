@@ -30,7 +30,7 @@ export interface SessionDatabase {
   getSessionByLogPath: (logPath: string) => AgentSessionRecord | null
   getSessionByWindow: (tmuxWindow: string) => AgentSessionRecord | null
   getActiveSessions: () => AgentSessionRecord[]
-  getInactiveSessions: () => AgentSessionRecord[]
+  getInactiveSessions: (options?: { maxAgeHours?: number }) => AgentSessionRecord[]
   orphanSession: (sessionId: string) => AgentSessionRecord | null
   displayNameExists: (displayName: string, excludeSessionId?: string) => boolean
   setPinned: (sessionId: string, isPinned: boolean) => AgentSessionRecord | null
@@ -111,6 +111,9 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
   )
   const selectInactive = db.prepare(
     'SELECT * FROM agent_sessions WHERE current_window IS NULL ORDER BY last_activity_at DESC'
+  )
+  const selectInactiveRecent = db.prepare(
+    'SELECT * FROM agent_sessions WHERE current_window IS NULL AND last_activity_at > $cutoff ORDER BY last_activity_at DESC'
   )
   const selectByDisplayName = db.prepare(
     'SELECT 1 FROM agent_sessions WHERE display_name = $displayName LIMIT 1'
@@ -221,7 +224,12 @@ export function initDatabase(options: { path?: string } = {}): SessionDatabase {
       const rows = selectActive.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },
-    getInactiveSessions: () => {
+    getInactiveSessions: (options?: { maxAgeHours?: number }) => {
+      if (options?.maxAgeHours) {
+        const cutoff = new Date(Date.now() - options.maxAgeHours * 60 * 60 * 1000).toISOString()
+        const rows = selectInactiveRecent.all({ $cutoff: cutoff }) as Record<string, unknown>[]
+        return rows.map(mapRow)
+      }
       const rows = selectInactive.all() as Record<string, unknown>[]
       return rows.map(mapRow)
     },

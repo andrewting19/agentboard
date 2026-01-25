@@ -215,7 +215,18 @@ const sockets = new Set<ServerWebSocket<WSData>>()
 
 function updateAgentSessions() {
   const active = db.getActiveSessions().map(toAgentSession)
-  const inactive = db.getInactiveSessions().map(toAgentSession)
+  let inactive = db.getInactiveSessions({ maxAgeHours: config.inactiveSessionMaxAgeHours }).map(toAgentSession)
+  // Filter out sessions from excluded project directories
+  // Use "<empty>" as a special marker to exclude sessions with no project path
+  if (config.excludeProjects?.length > 0) {
+    inactive = inactive.filter((session) => {
+      const projectPath = session.projectPath || ''
+      return !config.excludeProjects.some((excluded) => {
+        if (excluded === '<empty>') return projectPath === ''
+        return projectPath.startsWith(excluded)
+      })
+    })
+  }
   registry.setAgentSessions(active, inactive)
 }
 
