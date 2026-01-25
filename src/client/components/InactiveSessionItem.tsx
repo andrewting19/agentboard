@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import AlertTriangleIcon from '@untitledui-icons/react/line/esm/AlertTriangleIcon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession } from '@shared/types'
@@ -18,7 +18,7 @@ interface InactiveSessionItemProps {
   onSetPinned?: (sessionId: string, isPinned: boolean) => void
 }
 
-export default function InactiveSessionItem({
+export default memo(function InactiveSessionItem({
   session,
   showSessionIdPrefix,
   showProjectName,
@@ -74,7 +74,7 @@ export default function InactiveSessionItem({
 
   return (
     <div
-      className="group relative cursor-pointer px-3 py-2 transition-colors hover:bg-hover"
+      className="group relative cursor-pointer px-3 py-2 hover:bg-hover"
       role="button"
       tabIndex={0}
       title="Click to preview"
@@ -90,7 +90,7 @@ export default function InactiveSessionItem({
       {/* Play icon for quick resume - absolutely positioned, appears on hover */}
       <button
         type="button"
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted opacity-0 transition-opacity duration-150 hover:text-primary group-hover:opacity-100"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted opacity-0 hover:text-primary group-hover:opacity-100"
         title="Resume directly"
         onClick={(e) => {
           e.stopPropagation()
@@ -100,7 +100,7 @@ export default function InactiveSessionItem({
         ▶
       </button>
       {/* pl-2.5 matches active session content padding (clears status bar space) */}
-      <div className="flex flex-col gap-0.5 pl-2.5 transition-[padding] duration-150 group-hover:pr-4">
+      <div className="flex flex-col gap-0.5 pl-2.5 group-hover:pr-4">
         {/* Line 1: Icon + Name + Session ID + Time */}
         <div className="flex items-center gap-2">
           <AgentIcon
@@ -144,7 +144,9 @@ export default function InactiveSessionItem({
             )}
             {showMessage && (
               <span className="truncate text-xs italic text-muted">
-                "{session.lastUserMessage}"
+                "{session.lastUserMessage!.length > 200
+                  ? session.lastUserMessage!.slice(0, 200) + '…'
+                  : session.lastUserMessage}"
               </span>
             )}
           </div>
@@ -178,4 +180,4 @@ export default function InactiveSessionItem({
       )}
     </div>
   )
-}
+})

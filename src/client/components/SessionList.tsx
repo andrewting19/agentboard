@@ -975,7 +975,9 @@ function SessionRow({
             )}
             {showMessage && (
               <span className="line-clamp-2 text-xs italic text-muted">
-                "{session.lastUserMessage}"
+                "{session.lastUserMessage!.length > 200
+                  ? session.lastUserMessage!.slice(0, 200) + '…'
+                  : session.lastUserMessage}"
               </span>
             )}
           </div>
