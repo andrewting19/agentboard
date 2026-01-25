@@ -17,7 +17,7 @@ import { useWebSocket } from './hooks/useWebSocket'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { sortSessions } from './utils/sessions'
 import { getEffectiveModifier, matchesModifier } from './utils/device'
-import { playPermissionSound, playIdleSound } from './utils/sound'
+import { playPermissionSound, playIdleSound, primeAudio } from './utils/sound'
 
 interface ServerInfo {
   port: number
@@ -68,11 +68,36 @@ export default function App() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth)
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth)
   const projectFilters = useSettingsStore((state) => state.projectFilters)
+  const soundOnPermission = useSettingsStore((state) => state.soundOnPermission)
+  const soundOnIdle = useSettingsStore((state) => state.soundOnIdle)
 
   const { sendMessage, subscribe } = useWebSocket()
 
   // Handle mobile keyboard viewport adjustments
   useVisualViewport()
+
+  // Prime audio on first user interaction (required for Safari/iOS autoplay policy)
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (!soundOnPermission && !soundOnIdle) return
+
+    const unlockAudio = () => {
+      void primeAudio()
+      document.removeEventListener('click', unlockAudio)
+      document.removeEventListener('keydown', unlockAudio)
+      document.removeEventListener('touchstart', unlockAudio)
+    }
+
+    document.addEventListener('click', unlockAudio, { once: true, passive: true })
+    document.addEventListener('keydown', unlockAudio, { once: true, passive: true })
+    document.addEventListener('touchstart', unlockAudio, { once: true, passive: true })
+
+    return () => {
+      document.removeEventListener('click', unlockAudio)
+      document.removeEventListener('keydown', unlockAudio)
+      document.removeEventListener('touchstart', unlockAudio)
+    }
+  }, [soundOnPermission, soundOnIdle])
 
   // Sidebar resize handling
   const isResizing = useRef(false)
@@ -117,6 +142,24 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribe((message: ServerMessage) => {
       if (message.type === 'sessions') {
+        // Detect status transitions for sound notifications before updating
+        const currentSessions = useSessionStore.getState().sessions
+        const { soundOnPermission, soundOnIdle } = useSettingsStore.getState()
+
+        if (soundOnPermission || soundOnIdle) {
+          for (const nextSession of message.sessions) {
+            const prevSession = currentSessions.find((s) => s.id === nextSession.id)
+            if (prevSession && prevSession.status !== nextSession.status) {
+              if (prevSession.status !== 'permission' && nextSession.status === 'permission' && soundOnPermission) {
+                void playPermissionSound()
+              }
+              if (prevSession.status === 'working' && nextSession.status === 'waiting' && soundOnIdle) {
+                void playIdleSound()
+              }
+            }
+          }
+        }
+
         setSessions(message.sessions)
       }
       if (message.type === 'session-update') {

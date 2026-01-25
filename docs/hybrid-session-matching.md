@@ -57,6 +57,8 @@ export interface WindowLogVerificationResult {
   status: WindowLogVerificationStatus
   /** The best match found, if any */
   bestMatch: ExactMatchResult | null
+  /** Why inconclusive (for debugging) */
+  reason?: 'no_match' | 'tie' | 'error'
 }
 ```
 
@@ -68,7 +70,7 @@ export interface WindowLogVerificationResult {
  * Returns detailed result with tri-state status:
  * - 'verified': Window content matches the expected log (this log is the best match)
  * - 'mismatch': Window content matches a DIFFERENT log (strong evidence of wrong association)
- * - 'inconclusive': No match found (insufficient content to determine - e.g., compacted scrollback)
+ * - 'inconclusive': No confident match (empty scrollback, tie between logs, or error)
  */
 export function verifyWindowLogAssociationDetailed(
   tmuxWindow: string,
@@ -85,23 +87,30 @@ export function verifyWindowLogAssociationDetailed(
   const excludeSet = new Set(excludeLogPaths)
   excludeSet.delete(logPath)
 
-  const bestMatch = tryExactMatchWindowToLog(
-    tmuxWindow,
-    logDirs,
-    scrollbackLines,
-    context,
-    { excludeLogPaths: excludeSet.size > 0 ? [...excludeSet] : undefined }
-  )
+  try {
+    const bestMatch = tryExactMatchWindowToLog(
+      tmuxWindow,
+      logDirs,
+      scrollbackLines,
+      context,
+      { excludeLogPaths: excludeSet.size > 0 ? [...excludeSet] : undefined }
+    )
 
-  if (bestMatch === null) {
-    return { status: 'inconclusive', bestMatch: null }
+    if (bestMatch === null) {
+      // null means no match or tie - treat as inconclusive
+      return { status: 'inconclusive', bestMatch: null, reason: 'no_match' }
+    }
+
+    if (bestMatch.logPath === logPath) {
+      return { status: 'verified', bestMatch }
+    }
+
+    return { status: 'mismatch', bestMatch }
+  } catch (error) {
+    // IO errors, parse errors, etc. - treat as inconclusive
+    logger.warn('verify_window_log_error', { tmuxWindow, logPath, error: String(error) })
+    return { status: 'inconclusive', bestMatch: null, reason: 'error' }
   }
-
-  if (bestMatch.logPath === logPath) {
-    return { status: 'verified', bestMatch }
-  }
-
-  return { status: 'mismatch', bestMatch }
 }
 ```
 
@@ -272,12 +281,19 @@ const unmatchedOrphans = orphanCandidates.filter(
 )
 
 if (unmatchedOrphans.length > 0) {
-  // Build map of unclaimed window name -> window
+  // Build map of unclaimed window name -> window (only if name is unique)
   const unclaimedByName = new Map<string, Session>()
+  const ambiguousNames = new Set<string>()
   for (const window of windows) {
-    if (!claimedWindows.has(window.tmuxWindow) && !unclaimedByName.has(window.name)) {
-      unclaimedByName.set(window.name, window)
+    if (claimedWindows.has(window.tmuxWindow)) continue
+    if (ambiguousNames.has(window.name)) continue
+    if (unclaimedByName.has(window.name)) {
+      // Multiple windows with same name - mark as ambiguous, don't use for fallback
+      unclaimedByName.delete(window.name)
+      ambiguousNames.add(window.name)
+      continue
     }
+    unclaimedByName.set(window.name, window)
   }
 
   // Match unmatched orphans by display name
@@ -321,11 +337,13 @@ logger.info('orphan_rematch_complete', {
 
 | Case | Behavior |
 |------|----------|
-| Multiple orphans with same displayName | First one wins (rare due to unique name generation) |
+| Multiple orphans with same displayName | First in iteration order wins (rare due to unique name generation) |
+| Multiple windows with same name | Name fallback skipped for that name (ambiguous) |
 | Window name matches but content matched different log | Content match takes priority |
 | Window renamed after session created | Name fallback won't help, content might |
 | Session displayName changed after window created | Name fallback won't help |
 | Content proves mismatch but names match | Orphan anyway (content is authoritative when definitive) |
+| IO/parse error during verification | Treat as inconclusive, allow name fallback |
 
 ---
 
@@ -353,7 +371,8 @@ Updated events:
 1. **Tri-state verification returns correct status**
    - 'verified' when best match equals expected log
    - 'mismatch' when best match is different log
-   - 'inconclusive' when no match found
+   - 'inconclusive' when no match found (reason: 'no_match')
+   - 'inconclusive' when error occurs (reason: 'error')
 
 2. **Startup verification with name fallback**
    - Content verified → keep session
@@ -363,8 +382,9 @@ Updated events:
 
 3. **Orphan rematch name fallback**
    - Content match succeeds → use it
-   - Content match fails, name matches → use name fallback
+   - Content match fails, unique name matches → use name fallback
    - Content match fails, name doesn't match → stay orphaned
+   - Multiple windows with same name → skip name fallback (ambiguous)
    - Multiple orphans same name → first wins
 
 ### Integration Tests
