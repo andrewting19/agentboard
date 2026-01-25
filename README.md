@@ -13,11 +13,12 @@ Run your desktop/server, then connect from your phone or laptop over Tailscale/L
   - Quick keys toolbar (ctrl, esc, etc.)
 - Tracks Claude and Codex sessions by parsing their logs, auto-matching to active tmux windows. Inactive sessions can be restored with one click.
 - Shows the last user prompt for each session, so you can remember what each agent is working on
+- Pin agent TUI sessions to auto-resume them when the server restarts (useful if your machine reboots or tmux dies)
 
 ### Desktop
-| Terminal | Sessions |
-| :---: | :---: |
-| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> |
+| Terminal | Sessions | Pinning |
+| :---: | :---: | :---: |
+| <img src="assets/desktop.png" alt="Terminal" height="400"/> | <img src="assets/sessions.png" alt="Sessions" height="400"/> | <img src="assets/pins.png" alt="Pinning" height="400"/> |
 
 ### Mobile
 | Terminal | Controls |
