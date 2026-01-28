@@ -11,6 +11,7 @@ const globalAny = globalThis as typeof globalThis & {
   setInterval?: typeof setInterval
   clearInterval?: typeof clearInterval
   window?: Window & typeof globalThis
+  document?: Document
 }
 
 const originalSetTimeout = globalAny.setTimeout
@@ -18,6 +19,7 @@ const originalClearTimeout = globalAny.clearTimeout
 const originalSetInterval = globalAny.setInterval
 const originalClearInterval = globalAny.clearInterval
 const originalWindow = globalAny.window
+const originalDocument = globalAny.document
 
 const baseSession: Session = {
   id: 'session-1',
@@ -45,6 +47,11 @@ beforeEach(() => {
     }),
   } as unknown as Window & typeof globalThis
 
+  globalAny.document = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  } as unknown as Document
+
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
@@ -65,6 +72,7 @@ afterEach(() => {
   globalAny.setInterval = originalSetInterval
   globalAny.clearInterval = originalClearInterval
   globalAny.window = originalWindow
+  globalAny.document = originalDocument
   useSettingsStore.setState({
     sessionSortMode: 'created',
     sessionSortDirection: 'desc',
@@ -149,7 +157,7 @@ describe('SessionList component', () => {
     })
   })
 
-  test('renames session on enter after long press', () => {
+  test('shows context menu on long press and renames via menu', () => {
     globalAny.setTimeout = ((callback: () => void, delay?: number) => {
       if (delay === 500) {
         callback()
@@ -175,10 +183,22 @@ describe('SessionList component', () => {
 
     const card = renderer.root.findByProps({ 'data-testid': 'session-card' })
 
+    // Simulate long press with touch event including coordinates
     act(() => {
-      card.props.onTouchStart()
+      card.props.onTouchStart({ touches: [{ clientX: 100, clientY: 200 }] })
     })
 
+    // Context menu should appear
+    const contextMenu = renderer.root.findByProps({ role: 'menu' })
+    expect(contextMenu).toBeTruthy()
+
+    // Find and click the Rename button in context menu
+    const renameButton = contextMenu.findAllByProps({ role: 'menuitem' })[0]
+    act(() => {
+      renameButton.props.onClick({ stopPropagation: () => {} })
+    })
+
+    // Now the input should appear for renaming
     const input = renderer.root.findByType('input')
 
     act(() => {
@@ -196,7 +216,7 @@ describe('SessionList component', () => {
     })
   })
 
-  test('cancels rename on escape', () => {
+  test('cancels rename on escape after opening via context menu', () => {
     globalAny.setTimeout = ((callback: () => void, delay?: number) => {
       if (delay === 500) {
         callback()
@@ -222,8 +242,16 @@ describe('SessionList component', () => {
 
     const card = renderer.root.findByProps({ 'data-testid': 'session-card' })
 
+    // Simulate long press with touch event including coordinates
     act(() => {
-      card.props.onTouchStart()
+      card.props.onTouchStart({ touches: [{ clientX: 100, clientY: 200 }] })
+    })
+
+    // Find and click the Rename button in context menu
+    const contextMenu = renderer.root.findByProps({ role: 'menu' })
+    const renameButton = contextMenu.findAllByProps({ role: 'menuitem' })[0]
+    act(() => {
+      renameButton.props.onClick({ stopPropagation: () => {} })
     })
 
     const input = renderer.root.findByType('input')

@@ -795,10 +795,16 @@ function SessionRow({
     }
   }
 
-  const handleTouchStart = () => {
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
     if (isDragging) return
+    const touch = e.touches[0]
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY }
     longPressTimer.current = setTimeout(() => {
-      onStartEdit()
+      if (touchStartPos.current) {
+        setContextMenu(touchStartPos.current)
+      }
     }, 500)
   }
 
