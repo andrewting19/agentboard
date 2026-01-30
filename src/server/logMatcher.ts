@@ -1116,7 +1116,10 @@ export function extractLastEntryTimestamp(
     try {
       const entry = JSON.parse(lines[i])
       if (entry && typeof entry.timestamp === 'string') {
-        return entry.timestamp
+        // Validate timestamp is parseable before returning
+        if (!Number.isNaN(Date.parse(entry.timestamp))) {
+          return entry.timestamp
+        }
       }
     } catch {
       // Skip malformed lines

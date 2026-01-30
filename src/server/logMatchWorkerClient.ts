@@ -133,10 +133,26 @@ export class LogMatchWorkerClient {
     }
     worker.onerror = (event) => {
       const message = event instanceof ErrorEvent ? event.message : 'Log match worker error'
+      // Reject readiness immediately so callers don't wait for timeout
+      if (this.readyReject) {
+        const rejectFn = this.readyReject
+        this.readyResolve = null
+        this.readyReject = null
+        this.readyPromise = null
+        rejectFn(new WorkerInitError(message))
+      }
       this.failAll(new Error(message))
       this.restartWorker()
     }
     worker.onmessageerror = () => {
+      // Reject readiness immediately so callers don't wait for timeout
+      if (this.readyReject) {
+        const rejectFn = this.readyReject
+        this.readyResolve = null
+        this.readyReject = null
+        this.readyPromise = null
+        rejectFn(new WorkerInitError('Log match worker message error'))
+      }
       this.failAll(new Error('Log match worker message error'))
       this.restartWorker()
     }

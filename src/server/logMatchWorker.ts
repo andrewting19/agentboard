@@ -193,6 +193,10 @@ function buildOrphanEntries(
 
     // Check skip patterns BEFORE expensive token counting
     const codexExec = agentType === 'codex' ? isCodexExec(logPath) : false
+    // Always skip exec sessions - they are headless and should never match windows
+    if (codexExec) {
+      continue
+    }
     if (skipPatterns.length > 0) {
       const preEntry: LogEntrySnapshot = {
         logPath,
