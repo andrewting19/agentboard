@@ -49,10 +49,10 @@ const statusClass: Record<Session['status'], string> = {
 }
 
 const statusButtonBase: Record<Session['status'], string> = {
-  working: 'bg-working/25 text-working',
-  waiting: 'bg-waiting/25 text-waiting',
-  permission: 'bg-approval/25 text-approval',
-  unknown: 'bg-muted/25 text-muted',
+  working: 'bg-green-500/35 text-white',
+  waiting: 'bg-blue-500/35 text-white',
+  permission: 'bg-amber-500/35 text-white',
+  unknown: 'bg-gray-500/35 text-white',
 }
 
 const statusButtonActive: Record<Session['status'], string> = {
@@ -992,12 +992,11 @@ export default function Terminal({
       {/* Mobile session switcher - top of terminal */}
       {session && sessions.length > 1 && (
         <div className="relative overflow-hidden bg-elevated border-b border-border md:hidden">
-          {/* Left fade indicator */}
-          <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-elevated to-transparent z-10 pointer-events-none" />
+
           {/* Right fade indicator */}
           <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-elevated to-transparent z-10 pointer-events-none" />
           <div
-            className="flex items-center gap-1.5 px-3 py-1.5 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
+            className="flex items-center gap-1.5 pl-5 pr-3 py-1.5 overflow-x-auto scrollbar-none scroll-smooth snap-x snap-mandatory"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {sessions.map((s, index) => {
@@ -1008,7 +1007,7 @@ export default function Terminal({
                   type="button"
                   className={`
                     flex items-center justify-center shrink-0 snap-start
-                    h-8 w-8 text-sm font-bold rounded-lg
+                    h-8 w-8 text-sm font-extrabold rounded-lg
                     active:scale-95 transition-all duration-75
                     select-none touch-manipulation
                     ${isActive ? statusButtonActive[s.status] : statusButtonBase[s.status]}
