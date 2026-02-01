@@ -39,6 +39,7 @@ let dbState: {
 const defaultConfig = {
   port: 4040,
   hostname: '0.0.0.0',
+  hostLabel: 'test-host',
   refreshIntervalMs: 1000,
   tmuxSession: 'agentboard',
   discoverPrefixes: [],
@@ -52,6 +53,12 @@ const defaultConfig = {
   logMatchProfile: false,
   claudeResumeCmd: 'claude --resume {sessionId}',
   codexResumeCmd: 'codex resume {sessionId}',
+  remoteHosts: [] as string[],
+  remotePollMs: 15000,
+  remoteTimeoutMs: 4000,
+  remoteStaleMs: 45000,
+  remoteSshOpts: '',
+  remoteAllowControl: false,
 }
 
 const configState = { ...defaultConfig }
@@ -357,6 +364,8 @@ const baseSession: Session = {
   lastActivity: new Date().toISOString(),
   createdAt: new Date().toISOString(),
   source: 'managed',
+  host: 'test-host',
+  remote: false,
 }
 
 function createWs() {
@@ -462,8 +471,14 @@ describe('server message handlers', () => {
     }
     websocket.open?.(ws as never)
 
-    expect(sent[0]).toEqual({ type: 'sessions', sessions: [baseSession] })
-    expect(sent[1]).toMatchObject({ type: 'agent-sessions' })
+    expect(sent.find((message) => message.type === 'sessions')).toEqual({
+      type: 'sessions',
+      sessions: [baseSession],
+    })
+    expect(sent.find((message) => message.type === 'host-status')).toBeTruthy()
+    expect(sent.find((message) => message.type === 'agent-sessions')).toMatchObject({
+      type: 'agent-sessions',
+    })
 
     const nextSession = { ...baseSession, id: 'session-2', name: 'beta' }
     registryInstance.emit('session-update', nextSession)

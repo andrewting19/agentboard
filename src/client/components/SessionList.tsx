@@ -24,7 +24,7 @@ import ChevronRightIcon from '@untitledui-icons/react/line/esm/ChevronRightIcon'
 import Edit05Icon from '@untitledui-icons/react/line/esm/Edit05Icon'
 import Pin02Icon from '@untitledui-icons/react/line/esm/Pin02Icon'
 import type { AgentSession, Session } from '@shared/types'
-import { getSessionOrderKey, getUniqueProjects, sortSessions } from '../utils/sessions'
+import { getSessionOrderKey, getUniqueHosts, getUniqueProjects, sortSessions } from '../utils/sessions'
 import { formatRelativeTime } from '../utils/time'
 import { getPathLeaf } from '../utils/sessionLabel'
 import { getSessionIdShort } from '../utils/sessionId'
@@ -36,6 +36,8 @@ import { useExitCleanup } from '../hooks/useExitCleanup'
 import AgentIcon from './AgentIcon'
 import InactiveSessionItem from './InactiveSessionItem'
 import ProjectBadge from './ProjectBadge'
+import HostBadge from './HostBadge'
+import HostFilterDropdown from './HostFilterDropdown'
 import ProjectFilterDropdown from './ProjectFilterDropdown'
 import SessionPreviewModal from './SessionPreviewModal'
 
@@ -166,10 +168,13 @@ export default function SessionList({
   )
   const projectFilters = useSettingsStore((state) => state.projectFilters)
   const setProjectFilters = useSettingsStore((state) => state.setProjectFilters)
+  const hostFilters = useSettingsStore((state) => state.hostFilters)
+  const setHostFilters = useSettingsStore((state) => state.setHostFilters)
 
   // Get exiting sessions from store (for kill-failed rollback only)
   const exitingSessions = useSessionStore((state) => state.exitingSessions)
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
+  const hostStatuses = useSessionStore((state) => state.hostStatuses)
 
   // Clean up exiting session state after animations
   useExitCleanup(sessions, exitingSessions, clearExitingSession, EXIT_DURATION)
@@ -211,14 +216,48 @@ export default function SessionList({
     [sessions, inactiveSessions]
   )
 
+  const uniqueHosts = useMemo(() => {
+    const sessionHosts = getUniqueHosts(sessions, inactiveSessions)
+    const statusHosts = hostStatuses.map((status) => status.host)
+    const seen = new Set<string>()
+    const merged: string[] = []
+
+    for (const host of statusHosts) {
+      if (!host || seen.has(host)) continue
+      seen.add(host)
+      merged.push(host)
+    }
+
+    for (const host of sessionHosts) {
+      if (!host || seen.has(host)) continue
+      seen.add(host)
+      merged.push(host)
+    }
+
+    return merged
+  }, [sessions, inactiveSessions, hostStatuses])
+
+  // Auto-show host info when multiple hosts are present
+  const showHostInfo = useMemo(() => uniqueHosts.length > 1, [uniqueHosts])
+
   const filteredSessions = useMemo(() => {
-    if (projectFilters.length === 0) return sortedSessions
-    return sortedSessions.filter((session) => projectFilters.includes(session.projectPath))
-  }, [sortedSessions, projectFilters])
+    let next = sortedSessions
+    if (projectFilters.length > 0) {
+      next = next.filter((session) => projectFilters.includes(session.projectPath))
+    }
+    if (hostFilters.length > 0) {
+      next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+    }
+    return next
+  }, [sortedSessions, projectFilters, hostFilters])
 
   const filterKey = useMemo(
-    () => (projectFilters.length === 0 ? 'all-projects' : projectFilters.join('|')),
-    [projectFilters]
+    () => {
+      const projectKey = projectFilters.length === 0 ? 'all-projects' : projectFilters.join('|')
+      const hostKey = hostFilters.length === 0 ? 'all-hosts' : hostFilters.join('|')
+      return `${projectKey}::${hostKey}`
+    },
+    [projectFilters, hostFilters]
   )
 
   // Track sessions that became visible due to filter changes (for entry animation)
@@ -256,11 +295,15 @@ export default function SessionList({
   }, [newlyFilteredInIds])
 
   const filteredInactiveSessions = useMemo(() => {
-    if (projectFilters.length === 0) return inactiveSessions
-    return inactiveSessions.filter(
-      (session) => projectFilters.includes(session.projectPath)
-    )
-  }, [inactiveSessions, projectFilters])
+    let next = inactiveSessions
+    if (projectFilters.length > 0) {
+      next = next.filter((session) => projectFilters.includes(session.projectPath))
+    }
+    if (hostFilters.length > 0) {
+      next = next.filter((session) => hostFilters.includes(session.host ?? ''))
+    }
+    return next
+  }, [inactiveSessions, projectFilters, hostFilters])
 
   const hiddenPermissionCount = useMemo(() => {
     if (projectFilters.length === 0) return 0
@@ -280,6 +323,15 @@ export default function SessionList({
       setProjectFilters(nextFilters)
     }
   }, [projectFilters, uniqueProjects, setProjectFilters])
+
+  useEffect(() => {
+    if (hostFilters.length === 0 || uniqueHosts.length === 0) return
+    const validHosts = new Set(uniqueHosts)
+    const nextFilters = hostFilters.filter((host) => validHosts.has(host))
+    if (nextFilters.length !== hostFilters.length) {
+      setHostFilters(nextFilters)
+    }
+  }, [hostFilters, uniqueHosts, setHostFilters])
 
   // Drag-and-drop setup
   const sensors = useSensors(
@@ -397,6 +449,14 @@ export default function SessionList({
             Sessions
           </span>
           <div className="flex items-center gap-4">
+            {showHostInfo && (
+              <HostFilterDropdown
+                hosts={uniqueHosts}
+                selectedHosts={hostFilters}
+                onSelect={setHostFilters}
+                statuses={hostStatuses}
+              />
+            )}
             <ProjectFilterDropdown
               projects={uniqueProjects}
               selectedProjects={projectFilters}
@@ -444,6 +504,7 @@ export default function SessionList({
                   {filteredSessions.map((session, index) => {
                     const isTrulyNew = newlyActiveIds.has(session.id)
                     const isFilteredIn = newlyFilteredInIds.has(session.id)
+                    const isRemote = session.remote === true
                     // Calculate drop indicator position
                     const activeIndex = activeId
                       ? filteredSessions.findIndex((s) => s.id === activeId)
@@ -465,13 +526,14 @@ export default function SessionList({
                         showSessionIdPrefix={showSessionIdPrefix}
                         showProjectName={showProjectName}
                         showLastUserMessage={showLastUserMessage}
+                        showHostInfo={showHostInfo}
                         dropIndicator={showDropIndicator}
                         onSelect={() => onSelect(session.id)}
                         onStartEdit={() => setEditingSessionId(session.id)}
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
-                        onKill={onKill ? () => onKill(session.id) : undefined}
-                        onDuplicate={onDuplicate ? () => onDuplicate(session.id) : undefined}
+                        onKill={onKill && !isRemote ? () => onKill(session.id) : undefined}
+                        onDuplicate={onDuplicate && !isRemote ? () => onDuplicate(session.id) : undefined}
                         onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
                       />
                     )
@@ -569,6 +631,7 @@ interface SortableSessionItemProps {
   showSessionIdPrefix: boolean
   showProjectName: boolean
   showLastUserMessage: boolean
+  showHostInfo: boolean
   dropIndicator: 'above' | 'below' | null
   onSelect: () => void
   onStartEdit: () => void
@@ -590,6 +653,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
   showSessionIdPrefix,
   showProjectName,
   showLastUserMessage,
+  showHostInfo,
   dropIndicator,
   onSelect,
   onStartEdit,
@@ -671,6 +735,7 @@ const SortableSessionItem = forwardRef<HTMLDivElement, SortableSessionItemProps>
         showSessionIdPrefix={showSessionIdPrefix}
         showProjectName={showProjectName}
         showLastUserMessage={showLastUserMessage}
+        showHostInfo={showHostInfo}
         isDragging={isDragging}
         onSelect={onSelect}
         onStartEdit={onStartEdit}
@@ -696,6 +761,7 @@ interface SessionRowProps {
   showSessionIdPrefix: boolean
   showProjectName: boolean
   showLastUserMessage: boolean
+  showHostInfo: boolean
   isDragging?: boolean
   onSelect: () => void
   onStartEdit: () => void
@@ -713,6 +779,7 @@ function SessionRow({
   showSessionIdPrefix,
   showProjectName,
   showLastUserMessage,
+  showHostInfo,
   isDragging = false,
   onSelect,
   onStartEdit,
@@ -733,6 +800,7 @@ function SessionRow({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const directoryLeaf = getPathLeaf(session.projectPath)
+  const hostLabel = session.host?.trim()
   const needsInput = session.status === 'permission'
   const agentSessionId = session.agentSessionId?.trim()
   const sessionIdPrefix =
@@ -740,6 +808,7 @@ function SessionRow({
       ? getSessionIdShort(agentSessionId)
       : ''
   const showDirectory = showProjectName && Boolean(directoryLeaf)
+  const showHostBadge = showHostInfo && Boolean(hostLabel)
   const showMessage = showLastUserMessage && Boolean(session.lastUserMessage)
 
   // Track previous status for transition animation
@@ -917,8 +986,9 @@ function SessionRow({
         </div>
 
         {/* Line 2: Project badge + last user message (up to 2 lines total) */}
-        {(showDirectory || showMessage) && (
+        {(showDirectory || showHostBadge || showMessage) && (
           <div className="flex flex-wrap items-center gap-1 pl-[1.375rem]">
+            {showHostBadge && <HostBadge name={hostLabel!} />}
             {showDirectory && (
               <ProjectBadge name={directoryLeaf!} fullPath={session.projectPath} />
             )}

@@ -1,3 +1,4 @@
+import os from 'node:os'
 import path from 'node:path'
 
 const terminalModeRaw = process.env.TERMINAL_MODE
@@ -86,9 +87,46 @@ const claudeConfigDir =
 const codexHomeDir =
   process.env.CODEX_HOME || path.join(homeDir, '.codex')
 
+const hostLabel = process.env.AGENTBOARD_HOST?.trim() || os.hostname()
+
+// RFC 1123 hostname validation
+// Each label: 1-63 chars, alphanumeric + hyphen, no leading/trailing hyphen
+const HOSTNAME_REGEX = /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]))*$/
+
+export function isValidHostname(hostname: string): boolean {
+  return hostname.length > 0 && hostname.length <= 253 && HOSTNAME_REGEX.test(hostname)
+}
+
+const remoteHosts = (process.env.AGENTBOARD_REMOTE_HOSTS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter((value) => {
+    if (!value) return false
+    if (!isValidHostname(value)) {
+      console.warn(`[agentboard] Invalid hostname in AGENTBOARD_REMOTE_HOSTS: "${value}"`)
+      return false
+    }
+    return true
+  })
+
+const remotePollMsRaw = Number(process.env.AGENTBOARD_REMOTE_POLL_MS)
+const remotePollMs = Number.isFinite(remotePollMsRaw) ? remotePollMsRaw : 15000
+
+const remoteTimeoutMsRaw = Number(process.env.AGENTBOARD_REMOTE_TIMEOUT_MS)
+const remoteTimeoutMs = Number.isFinite(remoteTimeoutMsRaw) ? remoteTimeoutMsRaw : 4000
+
+const remoteStaleMsRaw = Number(process.env.AGENTBOARD_REMOTE_STALE_MS)
+const remoteStaleMs = Number.isFinite(remoteStaleMsRaw)
+  ? remoteStaleMsRaw
+  : Math.max(remotePollMs * 3, 15000)
+
+const remoteSshOpts = process.env.AGENTBOARD_REMOTE_SSH_OPTS || ''
+const remoteAllowControl = process.env.AGENTBOARD_REMOTE_ALLOW_CONTROL === 'true'
+
 export const config = {
   port: Number(process.env.PORT) || 4040,
   hostname: process.env.HOSTNAME || '0.0.0.0',
+  hostLabel,
   tmuxSession: process.env.TMUX_SESSION || 'agentboard',
   refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS) || 2000,
   discoverPrefixes: (process.env.DISCOVER_PREFIXES || '')
@@ -119,4 +157,10 @@ export const config = {
   skipMatchingPatterns,
   logLevel,
   logFile,
+  remoteHosts,
+  remotePollMs,
+  remoteTimeoutMs,
+  remoteStaleMs,
+  remoteSshOpts,
+  remoteAllowControl,
 }
