@@ -55,14 +55,14 @@ interface SessionListProps {
   onSetPinned?: (sessionId: string, isPinned: boolean) => void
 }
 
-const statusBarClass: Record<Session['status'], string> = {
-  working: 'status-bar-working',
-  waiting: 'status-bar-waiting',
-  permission: 'status-bar-approval pulse-approval',
-  unknown: 'status-bar-waiting',
+/** Status pill classes for the time/activity badge */
+const statusPillClass: Record<Session['status'], string> = {
+  working: 'bg-green-500/20 text-green-600',
+  waiting: 'bg-zinc-500/20 text-zinc-400',
+  permission: 'bg-amber-500/20 text-amber-600',
+  unknown: 'bg-zinc-500/20 text-zinc-400',
 }
 
-// Force re-render every 30s to update relative timestamps
 function useTimestampRefresh() {
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -918,7 +918,7 @@ function SessionRow({
 
   return (
     <div
-      className={`session-row group cursor-pointer px-3 py-2 ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
+      className={`session-row group cursor-pointer select-none px-3 py-2 ${isSelected ? 'selected' : ''} ${isDragging ? 'cursor-grabbing shadow-lg ring-1 ring-accent/30 bg-elevated' : 'cursor-grab'}`}
       role="button"
       tabIndex={0}
       data-testid="session-card"
@@ -932,12 +932,7 @@ function SessionRow({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
-      <div
-        className={`status-bar ${statusBarClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
-        onAnimationEnd={handlePulseAnimationEnd}
-      />
-
-      <div className="flex flex-col gap-0.5 pl-2.5">
+      <div className="flex flex-col gap-0.5 pl-0.5">
         {/* Line 1: Icon + Name + Time/Hand */}
         <div className="flex items-center gap-2">
           <AgentIcon
@@ -977,11 +972,19 @@ function SessionRow({
             </span>
           )}
           {needsInput ? (
-            <span className="ml-1 flex w-8 shrink-0 justify-end">
-              <HandIcon className="h-4 w-4 text-approval" aria-label="Needs input" />
+            <span
+              className={`ml-1 flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 ${statusPillClass[session.status]} pulse-approval`}
+              onAnimationEnd={handlePulseAnimationEnd}
+            >
+              <HandIcon className="h-3 w-3" aria-label="Needs input" />
             </span>
           ) : (
-            <span className="ml-1 w-8 shrink-0 text-right text-xs tabular-nums text-muted">{lastActivity}</span>
+            <span
+              className={`ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-right text-xs tabular-nums ${statusPillClass[session.status]}${isPulsingComplete ? ' pulse-complete' : ''}`}
+              onAnimationEnd={handlePulseAnimationEnd}
+            >
+              {lastActivity}
+            </span>
           )}
         </div>
 
@@ -1057,10 +1060,25 @@ function SessionRow({
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                if (session.logFilePath) {
-                  void navigator.clipboard.writeText(session.logFilePath).catch(() => {})
-                }
+                const pathToCopy = session.logFilePath
                 setContextMenu(null)
+                if (pathToCopy) {
+                  // Use textarea fallback for better mobile support
+                  const textarea = document.createElement('textarea')
+                  textarea.value = pathToCopy
+                  textarea.style.position = 'fixed'
+                  textarea.style.left = '-9999px'
+                  document.body.appendChild(textarea)
+                  textarea.focus()
+                  textarea.select()
+                  try {
+                    document.execCommand('copy')
+                  } catch {
+                    // Fallback to clipboard API
+                    void navigator.clipboard.writeText(pathToCopy).catch(() => {})
+                  }
+                  document.body.removeChild(textarea)
+                }
               }}
               className="w-full px-3 py-2 text-left text-sm text-secondary hover:bg-hover hover:text-primary flex items-center gap-2"
               role="menuitem"
