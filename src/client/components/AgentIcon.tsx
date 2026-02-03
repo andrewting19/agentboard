@@ -12,22 +12,29 @@ interface AgentIconProps {
 }
 
 function AnthropicIcon({ className }: { className?: string }) {
+  // Original viewBox is 92.2x65 (wide). Center it in a square viewBox for consistent sizing.
+  // Add padding: (92.2 - 65) / 2 = 13.6 on top/bottom to make it 92.2x92.2
   return (
     <svg
-      viewBox="0 0 92.2 65"
+      viewBox="0 0 92.2 92.2"
       fill="currentColor"
       className={className}
       aria-label="Anthropic"
     >
-      <path d="M66.5,0H52.4l25.7,65h14.1L66.5,0z M25.7,0L0,65h14.4l5.3-13.6h26.9L51.8,65h14.4L40.5,0C40.5,0,25.7,0,25.7,0z M24.3,39.3l8.8-22.8l8.8,22.8H24.3z" />
+      <path
+        d="M66.5,0H52.4l25.7,65h14.1L66.5,0z M25.7,0L0,65h14.4l5.3-13.6h26.9L51.8,65h14.4L40.5,0C40.5,0,25.7,0,25.7,0z M24.3,39.3l8.8-22.8l8.8,22.8H24.3z"
+        transform="translate(0, 13.6)"
+      />
     </svg>
   )
 }
 
 function OpenAIIcon({ className }: { className?: string }) {
+  // Original path extends to edges of 24x24 viewBox causing clipping.
+  // Expand viewBox and translate path to add padding.
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="-1 -1 26 26"
       fill="currentColor"
       className={className}
       aria-label="OpenAI"
@@ -38,23 +45,15 @@ function OpenAIIcon({ className }: { className?: string }) {
 }
 
 function PiIcon({ className }: { className?: string }) {
+  // Greek letter pi (π) from Wikimedia Commons
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 588.42 568.88"
       fill="currentColor"
       className={className}
       aria-label="Pi"
     >
-      <text
-        x="12"
-        y="19"
-        textAnchor="middle"
-        fontSize="26"
-        fontWeight="bold"
-        fontFamily="system-ui, sans-serif"
-      >
-        π
-      </text>
+      <path d="M 10.499686,177.03840 L 31.174931,178.56990 C 52.615925,154.32116 61.039171,82.595924 187.38789,96.634671 C 182.79339,403.95560 48.021426,436.37234 56.444675,499.41907 C 59.507674,535.15406 87.840417,557.10556 118.47041,558.38181 C 215.21014,555.06356 210.87089,424.63084 240.99038,95.868921 L 365.80760,95.868921 C 359.17110,211.75239 341.04836,327.63586 339.00636,441.22208 C 340.53786,516.77606 386.48285,557.10556 446.97708,557.61606 C 546.52456,560.93431 577.92030,444.79558 577.92030,395.27709 L 556.47931,395.27710 C 554.43731,436.11709 534.78306,465.47083 492.92207,467.25758 C 378.82535,468.78908 441.61683,266.63113 442.38258,97.400421 L 577.92030,98.166171 L 577.15455,11.636437 C 13.807491,8.9075799 85.312284,-2.1366151 10.499686,177.03840 z" />
     </svg>
   )
 }
