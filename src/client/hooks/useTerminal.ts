@@ -269,6 +269,9 @@ export function useTerminal({
       convertEol: true,
       theme,
       screenReaderMode: isiOS,
+      // Ensure text is readable even when apps use true color (24-bit RGB) sequences
+      // that bypass our theme colors (e.g., Pi using black text on dark backgrounds)
+      minimumContrastRatio: 4.5,
     })
 
     const fitAddon = new FitAddon()
