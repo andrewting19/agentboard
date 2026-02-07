@@ -590,14 +590,6 @@ export function useTerminal({
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    // Desktop Safari + Retina: force refresh to fix blurry WebGL canvas
-    const isSafariDesktop = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) && !isiOS
-    if (isSafariDesktop && window.devicePixelRatio > 1) {
-      setTimeout(() => {
-        terminal.refresh(0, terminal.rows - 1)
-      }, 100)
-    }
-
     return () => {
       // Cancel any pending async operations (font loading)
       cancelled = true
