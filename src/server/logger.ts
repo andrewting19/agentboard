@@ -37,7 +37,10 @@ let fileDestination: pino.DestinationStream | null = null
 function createLogger(): pino.Logger {
   const logLevel = getLogLevel()
   const logFile = getLogFile()
-  const isDev = process.env.NODE_ENV !== 'production'
+  // Compiled Bun binaries run from /$bunfs/ and can't use pino transports
+  // (they spawn worker_threads that dynamically require modules)
+  const isCompiledBinary = process.argv[0]?.includes('/$bunfs/')
+  const isDev = process.env.NODE_ENV !== 'production' && !isCompiledBinary
 
   // Dev mode: use pino-pretty for console, optionally also log to file
   if (isDev) {
