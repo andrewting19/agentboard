@@ -113,7 +113,11 @@ export class LogMatchWorkerClient {
       }, READY_TIMEOUT_MS)
     })
 
-    const worker = new Worker(new URL('./logMatchWorker.ts', import.meta.url).href, {
+    // Compiled Bun binaries need string paths; dev mode needs URL resolution
+    const workerPath = import.meta.url.includes('$bunfs')
+      ? './logMatchWorker.ts'
+      : new URL('./logMatchWorker.ts', import.meta.url).href
+    const worker = new Worker(workerPath, {
       type: 'module',
     })
     worker.onmessage = (event) => {

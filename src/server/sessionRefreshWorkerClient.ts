@@ -119,10 +119,13 @@ export class SessionRefreshWorkerClient {
 
   private spawnWorker(): void {
     if (this.disposed) return
-    const worker = new Worker(
-      new URL('./sessionRefreshWorker.ts', import.meta.url).href,
-      { type: 'module' }
-    )
+    // Compiled Bun binaries need string paths; dev mode needs URL resolution
+    const workerPath = import.meta.url.includes('$bunfs')
+      ? './sessionRefreshWorker.ts'
+      : new URL('./sessionRefreshWorker.ts', import.meta.url).href
+    const worker = new Worker(workerPath, {
+      type: 'module',
+    })
     worker.onmessage = (event) => {
       this.handleMessage(event.data as RefreshWorkerResponse)
     }
