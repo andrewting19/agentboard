@@ -44,7 +44,7 @@ import {
   isValidTmuxTarget,
 } from './validators'
 import { RemoteSessionPoller, splitSshOptions } from './remoteSessions'
-import { SshTerminalProxy } from './terminal/SshTerminalProxy'
+import { shellQuote, SshTerminalProxy } from './terminal/SshTerminalProxy'
 
 function checkPortAvailable(port: number): void {
   let result: ReturnType<typeof Bun.spawnSync>
@@ -255,6 +255,8 @@ const remotePoller = (config.remoteHosts?.length ?? 0) > 0
       timeoutMs: config.remoteTimeoutMs,
       staleAfterMs: config.remoteStaleMs,
       sshOptions: config.remoteSshOpts,
+      tmuxSessionPrefix: config.tmuxSession,
+      discoverPrefixes: config.discoverPrefixes,
       onUpdate: (statuses) => updateHostStatuses(statuses),
     })
   : null
@@ -1098,11 +1100,7 @@ function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
     // Exit tmux copy-mode quietly.
     const target = resolveCopyModeTarget(sessionId, ws, session)
     if (session.remote && session.host) {
-      const opts = sshOptionsForHost()
-      Bun.spawnSync(
-        ['ssh', ...opts, session.host, 'tmux', 'send-keys', '-X', '-t', target, 'cancel'],
-        { stdout: 'pipe', stderr: 'pipe' }
-      )
+      runRemoteTmux(session.host, ['send-keys', '-X', '-t', target, 'cancel'])
     } else {
       Bun.spawnSync(['tmux', 'send-keys', '-X', '-t', target, 'cancel'], {
         stdout: 'pipe',
@@ -1124,11 +1122,7 @@ function handleCheckCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
     // Query tmux for pane copy-mode status
     let result: ReturnType<typeof Bun.spawnSync>
     if (session.remote && session.host) {
-      const opts = sshOptionsForHost()
-      result = Bun.spawnSync(
-        ['ssh', ...opts, session.host, 'tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
-        { stdout: 'pipe', stderr: 'pipe' }
-      )
+      result = runRemoteTmux(session.host, ['display-message', '-p', '-t', target, '#{pane_in_mode}'])
     } else {
       result = Bun.spawnSync(
         ['tmux', 'display-message', '-p', '-t', target, '#{pane_in_mode}'],
@@ -1700,15 +1694,20 @@ function sshOptionsForHost(): string[] {
   ]
 }
 
+function runRemoteTmux(host: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
+  const remoteCmd = `tmux ${args.map(a => shellQuote(a)).join(' ')}`
+  const opts = sshOptionsForHost()
+  return Bun.spawnSync(['ssh', ...opts, host, remoteCmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+}
+
 function captureTmuxHistoryRemote(target: string, host: string): string | null {
   try {
-    const opts = sshOptionsForHost()
-    const result = Bun.spawnSync(
-      ['ssh', ...opts, host, `tmux capture-pane -t ${target} -p -S - -E - -J`],
-      { stdout: 'pipe', stderr: 'pipe' }
-    )
+    const result = runRemoteTmux(host, ['capture-pane', '-t', target, '-p', '-S', '-', '-E', '-', '-J'])
     if (result.exitCode !== 0) return null
-    const output = result.stdout.toString()
+    const output = result.stdout?.toString() ?? ''
     if (output.trim().length === 0) return null
     return output
   } catch {

@@ -346,4 +346,4 @@ class SshTerminalProxy extends TerminalProxyBase {
   }
 }
 
-export { SshTerminalProxy }
+export { shellQuote, SshTerminalProxy }

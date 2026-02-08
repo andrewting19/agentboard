@@ -20,6 +20,8 @@ export interface RemoteSessionPollerOptions {
   timeoutMs: number
   staleAfterMs: number
   sshOptions?: string
+  tmuxSessionPrefix: string
+  discoverPrefixes: string[]
   onUpdate?: (hosts: HostStatus[]) => void
 }
 
@@ -29,6 +31,8 @@ export class RemoteSessionPoller {
   private readonly timeoutMs: number
   private readonly staleAfterMs: number
   private readonly sshOptions: string[]
+  private readonly tmuxSessionPrefix: string
+  private readonly discoverPrefixes: string[]
   private readonly onUpdate?: (hosts: HostStatus[]) => void
   private timer: Timer | null = null
   private inFlight = false
@@ -44,6 +48,8 @@ export class RemoteSessionPoller {
       ...DEFAULT_SSH_OPTIONS,
       ...splitSshOptions(options.sshOptions ?? ''),
     ]
+    this.tmuxSessionPrefix = options.tmuxSessionPrefix
+    this.discoverPrefixes = options.discoverPrefixes
     this.onUpdate = options.onUpdate
   }
 
@@ -104,7 +110,7 @@ export class RemoteSessionPoller {
     this.inFlight = true
     try {
       const results = await Promise.allSettled(
-        this.hosts.map((host) => pollHost(host, this.sshOptions, this.timeoutMs))
+        this.hosts.map((host) => pollHost(host, this.sshOptions, this.timeoutMs, this.tmuxSessionPrefix, this.discoverPrefixes))
       )
 
       results.forEach((result, index) => {
@@ -138,7 +144,9 @@ export class RemoteSessionPoller {
 async function pollHost(
   host: string,
   sshOptions: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  tmuxSessionPrefix: string,
+  discoverPrefixes: string[]
 ): Promise<RemoteHostSnapshot> {
   const args = ['ssh', ...sshOptions, host, `tmux list-windows -a -F '${TMUX_LIST_FORMAT}'`]
   const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
@@ -171,7 +179,7 @@ async function pollHost(
     }
   }
 
-  const sessions = parseTmuxWindows(host, stdout)
+  const sessions = parseTmuxWindows(host, stdout, tmuxSessionPrefix, discoverPrefixes)
   return {
     host,
     sessions,
@@ -180,10 +188,16 @@ async function pollHost(
   }
 }
 
-function parseTmuxWindows(host: string, output: string): Session[] {
+function parseTmuxWindows(
+  host: string,
+  output: string,
+  tmuxSessionPrefix: string,
+  discoverPrefixes: string[]
+): Session[] {
   const lines = output.split('\n').map((line) => line.trim()).filter(Boolean)
   const now = Date.now()
   const sessions: Session[] = []
+  const wsPrefix = `${tmuxSessionPrefix}-ws-`
 
   for (const line of lines) {
     const parts = line.split('\\t')
@@ -206,8 +220,15 @@ function parseTmuxWindows(host: string, output: string): Session[] {
     }
 
     // Skip internal proxy sessions (created by SshTerminalProxy)
-    if (sessionName.includes('-ws-')) {
+    if (sessionName.startsWith(wsPrefix)) {
       continue
+    }
+
+    // Apply discover prefix filtering (same logic as SessionManager.listExternalWindows)
+    if (sessionName !== tmuxSessionPrefix && discoverPrefixes.length > 0) {
+      if (!discoverPrefixes.some((prefix) => sessionName.startsWith(prefix))) {
+        continue
+      }
     }
 
     const tmuxWindow = `${sessionName}:${windowIndex}`

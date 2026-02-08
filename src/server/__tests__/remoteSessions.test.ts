@@ -8,13 +8,16 @@ import {
 import { isValidHostname } from '../config'
 
 describe('parseTmuxWindows', () => {
+  const defaultPrefix = 'agentboard'
+  const noPrefixes: string[] = []
+
   test('parses valid tmux output with multiple windows', () => {
     const output = [
       'main\\t0\\t@1\\twindow-name\\t/home/user/project\\t1706745600\\t1706745000\\tclaude',
       'main\\t1\\t@2\\teditor\\t/home/user/code\\t1706745700\\t1706745100\\tvim',
     ].join('\n')
 
-    const sessions = parseTmuxWindows('remote-host', output)
+    const sessions = parseTmuxWindows('remote-host', output, defaultPrefix, noPrefixes)
 
     expect(sessions).toHaveLength(2)
     expect(sessions[0].id).toBe('remote:remote-host:main:@1')
@@ -37,19 +40,19 @@ describe('parseTmuxWindows', () => {
       'also\\tincomplete',
     ].join('\n')
 
-    const sessions = parseTmuxWindows('host', output)
+    const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
 
     expect(sessions).toHaveLength(1)
     expect(sessions[0].name).toBe('window')
   })
 
   test('handles empty output', () => {
-    const sessions = parseTmuxWindows('host', '')
+    const sessions = parseTmuxWindows('host', '', defaultPrefix, noPrefixes)
     expect(sessions).toHaveLength(0)
   })
 
   test('handles whitespace-only output', () => {
-    const sessions = parseTmuxWindows('host', '   \n  \n   ')
+    const sessions = parseTmuxWindows('host', '   \n  \n   ', defaultPrefix, noPrefixes)
     expect(sessions).toHaveLength(0)
   })
 
@@ -57,7 +60,7 @@ describe('parseTmuxWindows', () => {
     // Empty window name and command
     const output = 'session\\t0\\t@1\\t\\t/path\\t1706745600\\t1706745000\\t'
 
-    const sessions = parseTmuxWindows('host', output)
+    const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
 
     expect(sessions).toHaveLength(1)
     // Should fall back to tmuxWindow format when window name is empty
@@ -69,7 +72,7 @@ describe('parseTmuxWindows', () => {
     const output = 'session\\t0\\t@1\\twindow\\t/path\\tinvalid\\tbadtime\\tclaude'
 
     const before = Date.now()
-    const sessions = parseTmuxWindows('host', output)
+    const sessions = parseTmuxWindows('host', output, defaultPrefix, noPrefixes)
     const after = Date.now()
 
     expect(sessions).toHaveLength(1)
@@ -80,6 +83,78 @@ describe('parseTmuxWindows', () => {
     expect(activityTime).toBeLessThanOrEqual(after)
     expect(createdTime).toBeGreaterThanOrEqual(before)
     expect(createdTime).toBeLessThanOrEqual(after)
+  })
+
+  test('filters proxy sessions using tmuxSessionPrefix, not broad includes', () => {
+    const output = [
+      // This IS a proxy session for prefix "agentboard"
+      'agentboard-ws-abc123\\t0\\t@1\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
+      // This is NOT a proxy session — legitimate session name containing "-ws-"
+      'my-ws-project\\t0\\t@2\\twork\\t/home/user\\t1706745600\\t1706745000\\tclaude',
+      // Normal session
+      'dev\\t0\\t@3\\tdev-win\\t/home/user/dev\\t1706745600\\t1706745000\\tclaude',
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', noPrefixes)
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions[0].name).toBe('work')
+    expect(sessions[1].name).toBe('dev-win')
+  })
+
+  test('filters proxy sessions with custom tmuxSessionPrefix', () => {
+    const output = [
+      'myboard-ws-conn1\\t0\\t@1\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
+      'agentboard-ws-conn2\\t0\\t@2\\tproxy2\\t/tmp\\t1706745600\\t1706745000\\tssh',
+      'main\\t0\\t@3\\twork\\t/home/user\\t1706745600\\t1706745000\\tclaude',
+    ].join('\n')
+
+    // With prefix "myboard", only myboard-ws-* is filtered
+    const sessions = parseTmuxWindows('host', output, 'myboard', noPrefixes)
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions[0].name).toBe('proxy2')
+    expect(sessions[1].name).toBe('work')
+  })
+
+  test('includes all sessions when discoverPrefixes is empty', () => {
+    const output = [
+      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'dev-project\\t0\\t@2\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'random\\t0\\t@3\\trand-win\\t/home\\t1706745600\\t1706745000\\tvim',
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', [])
+
+    expect(sessions).toHaveLength(3)
+  })
+
+  test('filters by discoverPrefixes, always includes tmuxSessionPrefix session', () => {
+    const output = [
+      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'dev-project\\t0\\t@2\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'billy-work\\t0\\t@3\\tbilly-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'random\\t0\\t@4\\trand-win\\t/home\\t1706745600\\t1706745000\\tvim',
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-', 'billy-'])
+
+    expect(sessions).toHaveLength(3)
+    expect(sessions.map(s => s.name)).toEqual(['main-win', 'dev-win', 'billy-win'])
+  })
+
+  test('excludes proxy sessions and non-matching sessions together', () => {
+    const output = [
+      'agentboard\\t0\\t@1\\tmain-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'agentboard-ws-abc\\t0\\t@2\\tproxy\\t/tmp\\t1706745600\\t1706745000\\tssh',
+      'dev-project\\t0\\t@3\\tdev-win\\t/home\\t1706745600\\t1706745000\\tclaude',
+      'unrelated\\t0\\t@4\\tother\\t/home\\t1706745600\\t1706745000\\tvim',
+    ].join('\n')
+
+    const sessions = parseTmuxWindows('host', output, 'agentboard', ['dev-'])
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map(s => s.name)).toEqual(['main-win', 'dev-win'])
   })
 })
 
