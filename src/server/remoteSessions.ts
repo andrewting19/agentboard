@@ -140,7 +140,7 @@ async function pollHost(
   sshOptions: string[],
   timeoutMs: number
 ): Promise<RemoteHostSnapshot> {
-  const args = ['ssh', ...sshOptions, host, 'tmux', 'list-windows', '-a', '-F', TMUX_LIST_FORMAT]
+  const args = ['ssh', ...sshOptions, host, `tmux list-windows -a -F '${TMUX_LIST_FORMAT}'`]
   const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
 
   const timeout = setTimeout(() => {
@@ -202,6 +202,11 @@ function parseTmuxWindows(host: string, output: string): Session[] {
     ] = parts
 
     if (!sessionName || !windowIndex) {
+      continue
+    }
+
+    // Skip internal proxy sessions (created by SshTerminalProxy)
+    if (sessionName.includes('-ws-')) {
       continue
     }
 

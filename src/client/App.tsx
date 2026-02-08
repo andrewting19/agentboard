@@ -50,6 +50,7 @@ export default function App() {
   const connectionError = useSessionStore((state) => state.connectionError)
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
+  const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
 
   const theme = useThemeStore((state) => state.theme)
   const defaultProjectDir = useSettingsStore(
@@ -163,6 +164,9 @@ export default function App() {
       }
       if (message.type === 'host-status') {
         setHostStatuses(message.hosts)
+      }
+      if (message.type === 'server-config') {
+        setRemoteAllowControl(message.remoteAllowControl)
       }
       if (message.type === 'session-update') {
         // Detect status transitions for sound notifications
@@ -283,6 +287,7 @@ export default function App() {
     setSessions,
     setAgentSessions,
     setHostStatuses,
+    setRemoteAllowControl,
     subscribe,
     updateSession,
   ])

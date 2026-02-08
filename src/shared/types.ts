@@ -96,6 +96,7 @@ export type ServerMessage =
     }
   | { type: 'terminal-ready'; sessionId: string }
   | { type: 'tmux-copy-mode-status'; sessionId: string; inCopyMode: boolean }
+  | { type: 'server-config'; remoteAllowControl: boolean }
   | { type: 'error'; message: string }
   | { type: 'kill-failed'; sessionId: string; message: string }
 
