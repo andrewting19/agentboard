@@ -116,7 +116,7 @@ export type ClientMessage =
   | { type: 'terminal-detach'; sessionId: string }
   | { type: 'terminal-input'; sessionId: string; data: string }
   | { type: 'terminal-resize'; sessionId: string; cols: number; rows: number }
-  | { type: 'session-create'; projectPath: string; name?: string; command?: string }
+  | { type: 'session-create'; projectPath: string; name?: string; command?: string; host?: string }
   | { type: 'session-kill'; sessionId: string }
   | { type: 'session-rename'; sessionId: string; newName: string }
   | { type: 'session-refresh' }

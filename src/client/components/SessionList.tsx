@@ -534,7 +534,7 @@ export default function SessionList({
                         onCancelEdit={() => setEditingSessionId(null)}
                         onRename={(newName) => handleRename(session.id, newName)}
                         onKill={onKill && (!isRemote || remoteAllowControl) ? () => onKill(session.id) : undefined}
-                        onDuplicate={onDuplicate && !isRemote ? () => onDuplicate(session.id) : undefined}
+                        onDuplicate={onDuplicate && (!isRemote || remoteAllowControl) ? () => onDuplicate(session.id) : undefined}
                         onSetPinned={onSetPinned && session.agentSessionId ? (isPinned) => onSetPinned(session.agentSessionId!.trim(), isPinned) : undefined}
                       />
                     )

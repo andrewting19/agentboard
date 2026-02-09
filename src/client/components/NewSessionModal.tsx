@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { type CommandPreset, getFullCommand } from '../stores/settingsStore'
 import { DirectoryBrowser } from './DirectoryBrowser'
+import type { HostStatus } from '@shared/types'
 
 interface NewSessionModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (projectPath: string, name?: string, command?: string) => void
+  onCreate: (projectPath: string, name?: string, command?: string, host?: string) => void
   defaultProjectDir: string
   commandPresets: CommandPreset[]
   defaultPresetId: string
   lastProjectPath?: string | null
   activeProjectPath?: string
+  remoteHosts?: HostStatus[]
+  remoteAllowControl?: boolean
+  /** Pre-fill host for duplicate of remote session */
+  initialHost?: string
 }
 
 export default function NewSessionModal({
@@ -22,15 +27,21 @@ export default function NewSessionModal({
   defaultPresetId,
   lastProjectPath,
   activeProjectPath,
+  remoteHosts = [],
+  remoteAllowControl = false,
+  initialHost,
 }: NewSessionModalProps) {
   const [projectPath, setProjectPath] = useState('')
   const [name, setName] = useState('')
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [command, setCommand] = useState('')
   const [showBrowser, setShowBrowser] = useState(false)
+  const [selectedHost, setSelectedHost] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
   const projectPathRef = useRef<HTMLInputElement>(null)
   const defaultButtonRef = useRef<HTMLButtonElement>(null)
+
+  const showHostPicker = remoteAllowControl && remoteHosts.length > 0
 
   useEffect(() => {
     if (!isOpen) {
@@ -39,6 +50,7 @@ export default function NewSessionModal({
       setSelectedPresetId(null)
       setCommand('')
       setShowBrowser(false)
+      setSelectedHost(initialHost ?? '')
       // Focus terminal after modal closes
       setTimeout(() => {
         if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return
@@ -61,8 +73,9 @@ export default function NewSessionModal({
     // Initialize state when opening
     const basePath =
       activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
-    setProjectPath(basePath)
+    setProjectPath(initialHost ? '' : basePath)
     setName('')
+    setSelectedHost(initialHost ?? '')
     // Select default preset and set full command
     const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
     if (defaultPreset) {
@@ -83,7 +96,7 @@ export default function NewSessionModal({
         input.scrollLeft = input.scrollWidth
       }
     }, 50)
-  }, [activeProjectPath, commandPresets, defaultPresetId, defaultProjectDir, isOpen, lastProjectPath])
+  }, [activeProjectPath, commandPresets, defaultPresetId, defaultProjectDir, isOpen, lastProjectPath, initialHost])
 
   useEffect(() => {
     if (!isOpen) return
@@ -92,7 +105,7 @@ export default function NewSessionModal({
     const getFocusableElements = () => {
       if (!formRef.current) return []
       const selector =
-        'input:not([disabled]), button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]'
+        'input:not([disabled]), select:not([disabled]), button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]'
       return Array.from(formRef.current.querySelectorAll<HTMLElement>(selector))
     }
 
@@ -156,6 +169,7 @@ export default function NewSessionModal({
   }
 
   const isCustomMode = selectedPresetId === null
+  const isRemoteHost = selectedHost !== ''
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -168,7 +182,8 @@ export default function NewSessionModal({
     onCreate(
       trimmedPath,
       name.trim() || undefined,
-      finalCommand || undefined
+      finalCommand || undefined,
+      isRemoteHost ? selectedHost : undefined
     )
     onClose()
   }
@@ -201,6 +216,36 @@ export default function NewSessionModal({
         </h2>
 
         <div className="mt-4 space-y-4">
+          {showHostPicker && (
+            <div>
+              <label className="mb-1.5 block text-xs text-secondary">
+                Host
+              </label>
+              <select
+                value={selectedHost}
+                onChange={(event) => {
+                  setSelectedHost(event.target.value)
+                  // Clear project path when switching to/from remote since local paths don't apply
+                  if (event.target.value && !selectedHost) {
+                    setProjectPath('')
+                  } else if (!event.target.value && selectedHost) {
+                    const basePath = activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
+                    setProjectPath(basePath)
+                  }
+                }}
+                className="input text-sm"
+                data-testid="host-select"
+              >
+                <option value="">Local</option>
+                {remoteHosts.map((hostStatus) => (
+                  <option key={hostStatus.host} value={hostStatus.host}>
+                    {hostStatus.host}{hostStatus.ok ? '' : ' (unreachable)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="mb-1.5 block text-xs text-secondary">
               Command
@@ -270,20 +315,24 @@ export default function NewSessionModal({
                 value={projectPath}
                 onChange={(event) => setProjectPath(event.target.value)}
                 placeholder={
-                  activeProjectPath ||
-                  lastProjectPath ||
-                  defaultProjectDir ||
-                  '/Users/you/code/my-project'
+                  isRemoteHost
+                    ? '/home/user/project'
+                    : activeProjectPath ||
+                      lastProjectPath ||
+                      defaultProjectDir ||
+                      '/Users/you/code/my-project'
                 }
                 className="input flex-1 text-sm"
               />
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowBrowser(true)}
-              >
-                Browse
-              </button>
+              {!isRemoteHost && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowBrowser(true)}
+                >
+                  Browse
+                </button>
+              )}
             </div>
           </div>
           <div>
@@ -308,7 +357,7 @@ export default function NewSessionModal({
           </button>
         </div>
       </form>
-      {showBrowser && (
+      {showBrowser && !isRemoteHost && (
         <DirectoryBrowser
           initialPath={browserInitialPath}
           onSelect={(path) => {

@@ -51,6 +51,8 @@ export default function App() {
   const clearExitingSession = useSessionStore((state) => state.clearExitingSession)
   const markSessionExiting = useSessionStore((state) => state.markSessionExiting)
   const setRemoteAllowControl = useSessionStore((state) => state.setRemoteAllowControl)
+  const hostStatuses = useSessionStore((state) => state.hostStatuses)
+  const remoteAllowControl = useSessionStore((state) => state.remoteAllowControl)
 
   const theme = useThemeStore((state) => state.theme)
   const defaultProjectDir = useSettingsStore(
@@ -417,10 +419,11 @@ export default function App() {
   const handleCreateSession = (
     projectPath: string,
     name?: string,
-    command?: string
+    command?: string,
+    host?: string
   ) => {
-    sendMessage({ type: 'session-create', projectPath, name, command })
-    setLastProjectPath(projectPath)
+    sendMessage({ type: 'session-create', projectPath, name, command, host })
+    if (!host) setLastProjectPath(projectPath)
   }
 
   const handleResumeSession = (sessionId: string) => {
@@ -434,7 +437,12 @@ export default function App() {
   const handleDuplicateSession = useCallback((sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId)
     if (session) {
-      sendMessage({ type: 'session-create', projectPath: session.projectPath, command: session.command })
+      sendMessage({
+        type: 'session-create',
+        projectPath: session.projectPath,
+        command: session.command,
+        host: session.remote && session.host ? session.host : undefined,
+      })
     }
   }, [sessions, sendMessage])
 
@@ -518,6 +526,8 @@ export default function App() {
         defaultPresetId={defaultPresetId}
         lastProjectPath={lastProjectPath}
         activeProjectPath={selectedSession?.projectPath}
+        remoteHosts={hostStatuses}
+        remoteAllowControl={remoteAllowControl}
       />
 
       <SettingsModal

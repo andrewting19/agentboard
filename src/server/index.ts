@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
-import { config } from './config'
+import { config, isValidHostname } from './config'
 import { ensureTmux } from './prerequisites'
 import { SessionManager } from './SessionManager'
 import { SessionRegistry } from './SessionRegistry'
@@ -43,7 +43,8 @@ import {
   isValidSessionId,
   isValidTmuxTarget,
 } from './validators'
-import { RemoteSessionPoller, splitSshOptions } from './remoteSessions'
+import { RemoteSessionPoller, splitSshOptions, buildRemoteSessionId } from './remoteSessions'
+import { generateSessionName } from './nameGenerator'
 import { shellQuote, SshTerminalProxy } from './terminal/SshTerminalProxy'
 
 function checkPortAvailable(port: number): void {
@@ -1020,23 +1021,27 @@ function handleMessage(
       refreshSessions()
       return
     case 'session-create':
-      try {
-        const created = stampLocalSession(sessionManager.createWindow(
-          message.projectPath,
-          message.name,
-          message.command
-        ))
-        // Add session to registry immediately so terminal can attach
-        const currentSessions = registry.getAll()
-        registry.replaceSessions([created, ...currentSessions])
-        refreshSessions()
-        send(ws, { type: 'session-created', session: created })
-      } catch (error) {
-        send(ws, {
-          type: 'error',
-          message:
-            error instanceof Error ? error.message : 'Unable to create session',
-        })
+      if (message.host) {
+        handleRemoteCreate(message.host, message.projectPath, message.name, message.command, ws)
+      } else {
+        try {
+          const created = stampLocalSession(sessionManager.createWindow(
+            message.projectPath,
+            message.name,
+            message.command
+          ))
+          // Add session to registry immediately so terminal can attach
+          const currentSessions = registry.getAll()
+          registry.replaceSessions([created, ...currentSessions])
+          refreshSessions()
+          send(ws, { type: 'session-created', session: created })
+        } catch (error) {
+          send(ws, {
+            type: 'error',
+            message:
+              error instanceof Error ? error.message : 'Unable to create session',
+          })
+        }
       }
       return
     case 'session-kill':
@@ -1089,6 +1094,146 @@ function resolveCopyModeTarget(
     return ws.data.currentTmuxTarget
   }
   return session.tmuxWindow
+}
+
+function handleRemoteCreate(
+  host: string,
+  projectPath: string,
+  name: string | undefined,
+  command: string | undefined,
+  ws: ServerWebSocket<WSData>
+) {
+  if (!config.remoteAllowControl) {
+    send(ws, { type: 'error', message: 'Remote session creation is disabled' })
+    return
+  }
+  if (!isValidHostname(host)) {
+    send(ws, { type: 'error', message: 'Invalid hostname' })
+    return
+  }
+  if (!config.remoteHosts.includes(host)) {
+    send(ws, { type: 'error', message: 'Host is not in the configured remote hosts list' })
+    return
+  }
+  const trimmedPath = projectPath.trim()
+  if (!trimmedPath) {
+    send(ws, { type: 'error', message: 'Project path is required' })
+    return
+  }
+  // Path must be absolute and not contain control characters
+  if (!trimmedPath.startsWith('/') && !trimmedPath.startsWith('~')) {
+    send(ws, { type: 'error', message: 'Project path must be absolute' })
+    return
+  }
+  if (trimmedPath.includes('\n') || trimmedPath.includes('\r') || trimmedPath.includes('\0')) {
+    send(ws, { type: 'error', message: 'Project path contains invalid characters' })
+    return
+  }
+
+  // Validate name format if provided (same rules as rename)
+  const windowName = name?.trim() || generateSessionName()
+  if (name?.trim() && !/^[\w-]+$/.test(windowName)) {
+    send(ws, { type: 'error', message: 'Name can only contain letters, numbers, hyphens, and underscores' })
+    return
+  }
+
+  try {
+    // Validate path exists on remote host
+    const opts = sshOptionsForHost()
+    const testResult = Bun.spawnSync(
+      ['ssh', ...opts, host, `test -d ${shellQuote(trimmedPath)}`],
+      { stdout: 'pipe', stderr: 'pipe' }
+    )
+    if (testResult.exitCode !== 0) {
+      send(ws, { type: 'error', message: `Directory does not exist on ${host}: ${trimmedPath}` })
+      return
+    }
+
+    // Check if tmux session already exists on remote
+    const tmuxSession = config.tmuxSession
+    const hasSessionResult = runRemoteTmux(host, ['has-session', '-t', tmuxSession])
+    const sessionExists = hasSessionResult.exitCode === 0
+
+    const windowCommand = command?.trim() || 'claude'
+    // Wrap in interactive login shell so .bashrc PATH is available
+    // (non-interactive shells skip .bashrc due to [ -z "$PS1" ] && return guard).
+    // Fall back to raw command on systems without bash (e.g. Alpine).
+    const bashCheck = Bun.spawnSync(
+      ['ssh', ...opts, host, 'command -v bash'],
+      { stdout: 'pipe', stderr: 'pipe', timeout: 10_000 }
+    )
+    const wrappedCommand = bashCheck.exitCode === 0
+      ? `bash -lic ${shellQuote(windowCommand)}`
+      : windowCommand
+    let createResult: ReturnType<typeof Bun.spawnSync>
+
+    if (sessionExists) {
+      // Session exists — add a new window to it
+      createResult = runRemoteTmux(host, [
+        'new-window', '-P',
+        '-F', '#{window_index}\t#{window_id}',
+        '-t', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
+      ])
+    } else {
+      // Session doesn't exist — create it with the desired window directly
+      // (avoids an orphan window 0 from a separate new-session call)
+      createResult = runRemoteTmux(host, [
+        'new-session', '-d', '-P',
+        '-F', '#{window_index}\t#{window_id}',
+        '-s', tmuxSession, '-n', windowName, '-c', trimmedPath, wrappedCommand,
+      ])
+    }
+    if (createResult.exitCode !== 0) {
+      const stderr = createResult.stderr?.toString().trim() ?? 'Unknown error'
+      send(ws, { type: 'error', message: `Failed to create remote window: ${stderr}` })
+      return
+    }
+
+    // Parse window info from -P output (e.g. "3\t@5")
+    const printOutput = createResult.stdout?.toString().trim() ?? ''
+    const parts = printOutput.split('\t')
+    const now = Date.now()
+
+    if (parts.length < 2 || !parts[0]) {
+      send(ws, { type: 'error', message: 'Failed to verify remote session creation' })
+      return
+    }
+
+    // Verify the session actually persists (command may have exited immediately,
+    // e.g. if the shell binary doesn't exist on the remote host)
+    const verifyResult = runRemoteTmux(host, ['has-session', '-t', tmuxSession])
+    if (verifyResult.exitCode !== 0) {
+      send(ws, { type: 'error', message: `Remote session was created but exited immediately — is "${windowCommand}" installed on ${host}?` })
+      return
+    }
+
+    const [windowIndex, windowId] = parts
+    const id = buildRemoteSessionId(host, tmuxSession, windowIndex, windowId)
+    const createdSession: Session = {
+      id,
+      name: windowName,
+      tmuxWindow: `${tmuxSession}:${windowIndex}`,
+      projectPath: trimmedPath,
+      status: 'unknown',
+      lastActivity: new Date(now).toISOString(),
+      createdAt: new Date(now).toISOString(),
+      source: 'managed',
+      host,
+      remote: true,
+      command: windowCommand,
+    }
+
+    // Add to registry so it appears immediately
+    const currentSessions = registry.getAll()
+    registry.replaceSessions([createdSession, ...currentSessions])
+    refreshSessions()
+    send(ws, { type: 'session-created', session: createdSession })
+  } catch (error) {
+    send(ws, {
+      type: 'error',
+      message: error instanceof Error ? error.message : 'Unable to create remote session',
+    })
+  }
 }
 
 function handleCancelCopyMode(sessionId: string, ws: ServerWebSocket<WSData>) {
@@ -1746,6 +1891,7 @@ function runRemoteTmux(host: string, args: string[]): ReturnType<typeof Bun.spaw
   return Bun.spawnSync(['ssh', ...opts, host, remoteCmd], {
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: 10_000,
   })
 }
 
