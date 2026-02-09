@@ -27,6 +27,9 @@ interface ServerInfo {
 
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [newSessionInitialHost, setNewSessionInitialHost] = useState<string | undefined>(undefined)
+  const [newSessionInitialPath, setNewSessionInitialPath] = useState<string | undefined>(undefined)
+  const [newSessionInitialCommand, setNewSessionInitialCommand] = useState<string | undefined>(undefined)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
@@ -415,7 +418,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isModalOpen, selectedSessionId, setSelectedSessionId, filteredSortedSessions, handleKillSession, shortcutModifier])
 
-  const handleNewSession = () => setIsModalOpen(true)
+  const handleNewSession = () => {
+    setNewSessionInitialHost(undefined)
+    setNewSessionInitialPath(undefined)
+    setNewSessionInitialCommand(undefined)
+    setIsModalOpen(true)
+  }
   const handleOpenSettings = () => setIsSettingsOpen(true)
 
   const handleCreateSession = (
@@ -439,14 +447,12 @@ export default function App() {
   const handleDuplicateSession = useCallback((sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId)
     if (session) {
-      sendMessage({
-        type: 'session-create',
-        projectPath: session.projectPath,
-        command: session.command,
-        host: session.remote && session.host ? session.host : undefined,
-      })
+      setNewSessionInitialHost(session.remote && session.host ? session.host : undefined)
+      setNewSessionInitialPath(session.projectPath)
+      setNewSessionInitialCommand(session.command || undefined)
+      setIsModalOpen(true)
     }
-  }, [sessions, sendMessage])
+  }, [sessions])
 
   const handleSetPinned = useCallback((sessionId: string, isPinned: boolean) => {
     sendMessage({ type: 'session-pin', sessionId, isPinned })
@@ -535,6 +541,9 @@ export default function App() {
         activeProjectPath={selectedSession?.projectPath}
         remoteHosts={remoteHostStatuses}
         remoteAllowControl={remoteAllowControl}
+        initialHost={newSessionInitialHost}
+        initialPath={newSessionInitialPath}
+        initialCommand={newSessionInitialCommand}
       />
 
       <SettingsModal

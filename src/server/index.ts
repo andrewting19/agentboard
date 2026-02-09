@@ -225,9 +225,43 @@ function stampLocalSessions(sessions: Session[]): Session[] {
   return sessions.map(stampLocalSession)
 }
 
+// Remote session create is optimistic (we broadcast `session-created` immediately),
+// but the remote poller snapshot can lag behind. Protect newly-created remote ids
+// so refresh cycles don't drop them until the poller catches up.
+const PROTECTED_REMOTE_SESSION_TTL_MS = 30_000
+const protectedRemoteSessionIds = new Map<string, number>()
+
 function mergeRemoteSessions(sessions: Session[]): Session[] {
   const remoteSessions = remotePoller?.getSessions() ?? []
-  return [...stampLocalSessions(sessions), ...remoteSessions]
+  if (protectedRemoteSessionIds.size === 0) {
+    return [...stampLocalSessions(sessions), ...remoteSessions]
+  }
+
+  const now = Date.now()
+  const remoteIds = new Set(remoteSessions.map((session) => session.id))
+  const byId = new Map(registry.getAll().map((session) => [session.id, session]))
+  const protectedSessions: Session[] = []
+
+  for (const [id, addedAt] of protectedRemoteSessionIds) {
+    if (now - addedAt > PROTECTED_REMOTE_SESSION_TTL_MS) {
+      protectedRemoteSessionIds.delete(id)
+      continue
+    }
+    if (remoteIds.has(id)) {
+      // Poller has discovered it; no longer needs protection.
+      protectedRemoteSessionIds.delete(id)
+      continue
+    }
+    const existing = byId.get(id)
+    if (existing?.remote) {
+      protectedSessions.push(existing)
+    } else {
+      // Session disappeared from registry (killed/failed); stop protecting it.
+      protectedRemoteSessionIds.delete(id)
+    }
+  }
+
+  return [...stampLocalSessions(sessions), ...protectedSessions, ...remoteSessions]
 }
 
 let hostStatuses: HostStatus[] = []
@@ -1229,6 +1263,8 @@ async function handleRemoteCreate(
       remote: true,
       command: windowCommand,
     }
+
+    protectedRemoteSessionIds.set(createdSession.id, now)
 
     // Add to registry so it appears immediately
     const currentSessions = registry.getAll()

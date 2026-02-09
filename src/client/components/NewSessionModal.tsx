@@ -16,6 +16,10 @@ interface NewSessionModalProps {
   remoteAllowControl?: boolean
   /** Pre-fill host for duplicate of remote session */
   initialHost?: string
+  /** Pre-fill path (e.g. when duplicating an existing session) */
+  initialPath?: string
+  /** Pre-fill command (e.g. when duplicating an existing session) */
+  initialCommand?: string
 }
 
 export default function NewSessionModal({
@@ -30,6 +34,8 @@ export default function NewSessionModal({
   remoteHosts = [],
   remoteAllowControl = false,
   initialHost,
+  initialPath,
+  initialCommand,
 }: NewSessionModalProps) {
   const [projectPath, setProjectPath] = useState('')
   const [name, setName] = useState('')
@@ -72,21 +78,37 @@ export default function NewSessionModal({
     }
     // Initialize state when opening
     const basePath =
-      activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
-    setProjectPath(initialHost ? '' : basePath)
+      initialPath?.trim() ||
+      activeProjectPath?.trim() ||
+      lastProjectPath ||
+      defaultProjectDir ||
+      ''
+    setProjectPath(basePath)
     setName('')
     setSelectedHost(initialHost ?? '')
-    // Select default preset and set full command
-    const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
-    if (defaultPreset) {
-      setSelectedPresetId(defaultPresetId)
-      setCommand(getFullCommand(defaultPreset))
-    } else if (commandPresets.length > 0) {
-      setSelectedPresetId(commandPresets[0].id)
-      setCommand(getFullCommand(commandPresets[0]))
+    const trimmedInitialCommand = initialCommand?.trim()
+    if (trimmedInitialCommand) {
+      const matchingPreset = commandPresets.find((p) => getFullCommand(p) === trimmedInitialCommand)
+      if (matchingPreset) {
+        setSelectedPresetId(matchingPreset.id)
+        setCommand(getFullCommand(matchingPreset))
+      } else {
+        setSelectedPresetId(null)
+        setCommand(trimmedInitialCommand)
+      }
     } else {
-      setSelectedPresetId(null)
-      setCommand('')
+      // Select default preset and set full command
+      const defaultPreset = commandPresets.find(p => p.id === defaultPresetId)
+      if (defaultPreset) {
+        setSelectedPresetId(defaultPresetId)
+        setCommand(getFullCommand(defaultPreset))
+      } else if (commandPresets.length > 0) {
+        setSelectedPresetId(commandPresets[0].id)
+        setCommand(getFullCommand(commandPresets[0]))
+      } else {
+        setSelectedPresetId(null)
+        setCommand('')
+      }
     }
     // Focus default button and scroll project path after DOM update
     setTimeout(() => {
@@ -96,7 +118,7 @@ export default function NewSessionModal({
         input.scrollLeft = input.scrollWidth
       }
     }, 50)
-  }, [activeProjectPath, commandPresets, defaultPresetId, defaultProjectDir, isOpen, lastProjectPath, initialHost])
+  }, [activeProjectPath, commandPresets, defaultPresetId, defaultProjectDir, isOpen, lastProjectPath, initialHost, initialPath, initialCommand])
 
   useEffect(() => {
     if (!isOpen) return
@@ -194,6 +216,16 @@ export default function NewSessionModal({
     { id: 'custom', label: 'Custom', isCustom: true },
   ]
 
+  const hostOptions = [
+    { id: '', label: 'Local', ok: true, error: undefined },
+    ...remoteHosts.map((hostStatus) => ({
+      id: hostStatus.host,
+      label: hostStatus.host,
+      ok: hostStatus.ok,
+      error: hostStatus.error,
+    })),
+  ]
+
   const browserInitialPath = projectPath.trim() || '~'
 
   return (
@@ -221,28 +253,49 @@ export default function NewSessionModal({
               <label className="mb-1.5 block text-xs text-secondary">
                 Host
               </label>
-              <select
-                value={selectedHost}
-                onChange={(event) => {
-                  setSelectedHost(event.target.value)
-                  // Clear project path when switching to/from remote since local paths don't apply
-                  if (event.target.value && !selectedHost) {
-                    setProjectPath('')
-                  } else if (!event.target.value && selectedHost) {
-                    const basePath = activeProjectPath?.trim() || lastProjectPath || defaultProjectDir
-                    setProjectPath(basePath)
-                  }
-                }}
-                className="input text-sm"
+              <div
+                className="flex flex-wrap gap-2"
+                role="radiogroup"
+                aria-label="Host"
                 data-testid="host-select"
               >
-                <option value="">Local</option>
-                {remoteHosts.map((hostStatus) => (
-                  <option key={hostStatus.host} value={hostStatus.host}>
-                    {hostStatus.host}{hostStatus.ok ? '' : ' (unreachable)'}
-                  </option>
-                ))}
-              </select>
+                {hostOptions.map((option, index) => {
+                  const isActive = selectedHost === option.id
+                  const isMuted = !option.ok && !isActive
+                  return (
+                    <button
+                      key={option.id || 'local'}
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      aria-label={option.label}
+                      title={!option.ok ? (option.error || 'Unreachable') : undefined}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => setSelectedHost(option.id)}
+                      onKeyDown={(e) => {
+                        let newIndex = index
+                        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          newIndex = (index + 1) % hostOptions.length
+                        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          newIndex = (index - 1 + hostOptions.length) % hostOptions.length
+                        } else {
+                          return
+                        }
+                        const next = hostOptions[newIndex]
+                        setSelectedHost(next.id)
+                        const container = e.currentTarget.parentElement
+                        const buttons = container?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+                        buttons?.[newIndex]?.focus()
+                      }}
+                      className={`btn text-xs focus:outline-none focus:ring-2 focus:ring-primary ${isActive ? 'btn-primary' : ''} ${isMuted ? 'opacity-60' : ''}`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
 

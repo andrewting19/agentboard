@@ -1301,6 +1301,58 @@ describe('server message handlers', () => {
     expect(registryInstance.sessions.some((s) => s.remote && s.host === 'remote-host')).toBe(true)
   })
 
+  test('does not drop optimistically created remote session on refresh before poller updates', async () => {
+    configState.remoteAllowControl = true
+    configState.remoteHosts = ['remote-host']
+    const { serveOptions, registryInstance } = await loadIndex()
+    sessionManagerState.listWindows = () => []
+
+    spawnSyncImpl = ((...args: Parameters<typeof Bun.spawnSync>) => {
+      const command = Array.isArray(args[0]) ? args[0] : [String(args[0])]
+      const cmdStr = command.join(' ')
+      if (cmdStr.includes('new-window')) {
+        return {
+          exitCode: 0,
+          stdout: Buffer.from('1\t@5\n'),
+          stderr: Buffer.from(''),
+        } as ReturnType<typeof Bun.spawnSync>
+      }
+      return {
+        exitCode: 0,
+        stdout: Buffer.from(''),
+        stderr: Buffer.from(''),
+      } as ReturnType<typeof Bun.spawnSync>
+    }) as typeof Bun.spawnSync
+
+    const { ws } = createWs()
+    const websocket = serveOptions.websocket
+    if (!websocket) throw new Error('WebSocket handlers not configured')
+
+    websocket.message?.(
+      ws as never,
+      JSON.stringify({
+        type: 'session-create',
+        projectPath: '/home/user/project',
+        name: 'test-name',
+        host: 'remote-host',
+      })
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    const createdId = 'remote:remote-host:agentboard:@5'
+    expect(registryInstance.sessions.some((s) => s.id === createdId)).toBe(true)
+
+    const baselineReplaceCalls = replaceSessionsCalls.length
+    websocket.message?.(ws as never, JSON.stringify({ type: 'session-refresh' }))
+
+    for (let i = 0; i < 100 && replaceSessionsCalls.length === baselineReplaceCalls; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    expect(replaceSessionsCalls.length).toBeGreaterThan(baselineReplaceCalls)
+    expect(registryInstance.sessions.some((s) => s.id === createdId)).toBe(true)
+  })
+
   test('sends error when remote new-window fails', async () => {
     configState.remoteAllowControl = true
     configState.remoteHosts = ['remote-host']
