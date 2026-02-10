@@ -79,7 +79,12 @@ describe('NewSessionModal component', () => {
     })
 
     const buttons = renderer.root.findAllByType('button')
-    const customButton = buttons.find((button) => button.props.children === 'Custom')
+    const customButton = buttons.find((button) => {
+      const children = Array.isArray(button.props.children)
+        ? button.props.children
+        : [button.props.children]
+      return children.some((c: unknown) => c === 'Custom')
+    })
 
     if (!customButton) {
       throw new Error('Expected custom command button')

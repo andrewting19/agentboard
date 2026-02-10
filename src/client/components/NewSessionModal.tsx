@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { type CommandPreset, getFullCommand } from '../stores/settingsStore'
 import { DirectoryBrowser } from './DirectoryBrowser'
+import AgentIcon from './AgentIcon'
 import type { HostStatus } from '@shared/types'
 
 interface NewSessionModalProps {
@@ -220,8 +221,8 @@ export default function NewSessionModal({
 
   // Build button list: presets + Custom
   const allOptions = [
-    ...commandPresets.map(p => ({ id: p.id, label: p.label, isCustom: false })),
-    { id: 'custom', label: 'Custom', isCustom: true },
+    ...commandPresets.map(p => ({ id: p.id, label: p.label, isCustom: false, agentType: p.agentType, command: p.command })),
+    { id: 'custom', label: 'Custom', isCustom: true, agentType: undefined, command: undefined },
   ]
 
   const hostOptions = [
@@ -357,6 +358,7 @@ export default function NewSessionModal({
                     }}
                     className={`btn text-xs focus:outline-none focus:ring-2 focus:ring-primary ${isActive ? 'btn-primary' : ''}`}
                   >
+                    <AgentIcon agentType={option.agentType} command={option.command} className="inline-block h-3.5 w-3.5 shrink-0" />
                     {option.label}
                   </button>
                 )
