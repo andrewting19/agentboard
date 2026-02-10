@@ -1139,12 +1139,21 @@ function flushTerminalOutput(ws: ServerWebSocket<WSData>): void {
     return
   }
 
+  // If the socket is already closed, drop buffered output.
+  if (!sockets.has(ws)) {
+    return
+  }
+
   // Drop buffered output if the client switched sessions before we flushed.
   if (ws.data.currentSessionId !== sessionId) {
     return
   }
 
-  send(ws, { type: 'terminal-output', sessionId, data })
+  try {
+    send(ws, { type: 'terminal-output', sessionId, data })
+  } catch {
+    // Ignore send errors (socket may have closed between the `sockets.has` check and send).
+  }
 }
 
 function bufferTerminalOutput(
