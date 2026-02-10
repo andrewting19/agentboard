@@ -384,6 +384,9 @@ function createWs() {
       currentTmuxTarget: null as string | null,
       connectionId: 'ws-test',
       terminalHost: null as string | null,
+      terminalOutputBuffer: '',
+      terminalOutputSessionId: null as string | null,
+      terminalOutputFlushTimer: null as ReturnType<typeof setTimeout> | null,
     },
     send: (payload: string) => {
       sent.push(JSON.parse(payload) as ServerMessage)
@@ -1770,6 +1773,8 @@ describe('server message handlers', () => {
     expect(attached?.resizes).toEqual([{ cols: 120, rows: 40 }])
 
     attached?.emitData('output')
+    // Terminal output is batched per-tick to reduce WS message churn.
+    await new Promise((r) => setTimeout(r, 0))
     expect(sent.some((message) => message.type === 'terminal-output')).toBe(true)
 
     websocket.message?.(

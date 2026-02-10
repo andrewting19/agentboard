@@ -210,6 +210,9 @@ interface WSData {
   currentTmuxTarget: string | null
   connectionId: string
   terminalHost: string | null
+  terminalOutputBuffer: string
+  terminalOutputSessionId: string | null
+  terminalOutputFlushTimer: ReturnType<typeof setTimeout> | null
 }
 
 const sockets = new Set<ServerWebSocket<WSData>>()
@@ -1004,6 +1007,9 @@ Bun.serve<WSData>({
             currentTmuxTarget: null,
             connectionId: createConnectionId(),
             terminalHost: null,
+            terminalOutputBuffer: '',
+            terminalOutputSessionId: null,
+            terminalOutputFlushTimer: null,
           },
         })
       ) {
@@ -1057,6 +1063,12 @@ logger.info('server_started', {
 async function cleanupAllTerminals() {
   const disposePromises: Promise<void>[] = []
   for (const ws of sockets) {
+    if (ws.data.terminalOutputFlushTimer) {
+      clearTimeout(ws.data.terminalOutputFlushTimer)
+      ws.data.terminalOutputFlushTimer = null
+    }
+    ws.data.terminalOutputBuffer = ''
+    ws.data.terminalOutputSessionId = null
     if (ws.data.terminal) {
       disposePromises.push(ws.data.terminal.dispose())
       ws.data.terminal = null
@@ -1080,6 +1092,12 @@ process.on('SIGTERM', () => {
 })
 
 function cleanupTerminals(ws: ServerWebSocket<WSData>) {
+  if (ws.data.terminalOutputFlushTimer) {
+    clearTimeout(ws.data.terminalOutputFlushTimer)
+    ws.data.terminalOutputFlushTimer = null
+  }
+  ws.data.terminalOutputBuffer = ''
+  ws.data.terminalOutputSessionId = null
   if (ws.data.terminal) {
     void ws.data.terminal.dispose()
     ws.data.terminal = null
@@ -1098,6 +1116,62 @@ function broadcast(message: ServerMessage) {
 
 function send(ws: ServerWebSocket<WSData>, message: ServerMessage) {
   ws.send(JSON.stringify(message))
+}
+
+// Terminal output can arrive in very small chunks (especially for TUI apps), which can
+// result in lots of WebSocket messages and increased main-thread work in the browser.
+// Batch chunks per-tick to reduce JSON stringify/send churn without adding noticeable latency.
+const TERMINAL_OUTPUT_MAX_BUFFER_CHARS = 64 * 1024
+
+function flushTerminalOutput(ws: ServerWebSocket<WSData>): void {
+  if (ws.data.terminalOutputFlushTimer) {
+    clearTimeout(ws.data.terminalOutputFlushTimer)
+    ws.data.terminalOutputFlushTimer = null
+  }
+
+  const sessionId = ws.data.terminalOutputSessionId
+  const data = ws.data.terminalOutputBuffer
+
+  ws.data.terminalOutputBuffer = ''
+  ws.data.terminalOutputSessionId = null
+
+  if (!sessionId || !data) {
+    return
+  }
+
+  // Drop buffered output if the client switched sessions before we flushed.
+  if (ws.data.currentSessionId !== sessionId) {
+    return
+  }
+
+  send(ws, { type: 'terminal-output', sessionId, data })
+}
+
+function bufferTerminalOutput(
+  ws: ServerWebSocket<WSData>,
+  sessionId: string,
+  data: string
+): void {
+  if (!data) return
+
+  // If the session changed mid-burst, flush the previous session's buffer (it will be dropped
+  // if no longer current).
+  if (ws.data.terminalOutputSessionId && ws.data.terminalOutputSessionId !== sessionId) {
+    flushTerminalOutput(ws)
+  }
+
+  ws.data.terminalOutputSessionId = sessionId
+  ws.data.terminalOutputBuffer += data
+
+  // Prevent unbounded buffering if output is extremely bursty.
+  if (ws.data.terminalOutputBuffer.length >= TERMINAL_OUTPUT_MAX_BUFFER_CHARS) {
+    flushTerminalOutput(ws)
+    return
+  }
+
+  if (!ws.data.terminalOutputFlushTimer) {
+    ws.data.terminalOutputFlushTimer = setTimeout(() => flushTerminalOutput(ws), 0)
+  }
 }
 
 function fireAndForget(promise: Promise<unknown>, context: string): void {
@@ -1792,7 +1866,7 @@ function createPersistentTerminal(ws: ServerWebSocket<WSData>) {
       if (!sessionId) {
         return
       }
-      send(ws, { type: 'terminal-output', sessionId, data })
+      bufferTerminalOutput(ws, sessionId, data)
     },
     onExit: () => {
       // Guard: skip if this proxy was already replaced (e.g. by SSH proxy)
@@ -1895,7 +1969,7 @@ function createAndStartSshProxy(
     onData: (data) => {
       const sessionId = ws.data.currentSessionId
       if (!sessionId) return
-      send(ws, { type: 'terminal-output', sessionId, data })
+      bufferTerminalOutput(ws, sessionId, data)
     },
     onExit: () => {
       // Guard: skip if this proxy was already replaced
@@ -2077,6 +2151,8 @@ async function captureTmuxHistoryRemote(target: string, host: string): Promise<s
 
 function detachTerminalPersistent(ws: ServerWebSocket<WSData>, sessionId: string) {
   if (ws.data.currentSessionId === sessionId) {
+    // Flush any pending buffered output while the session is still current.
+    flushTerminalOutput(ws)
     ws.data.currentSessionId = null
     ws.data.currentTmuxTarget = null
   }
