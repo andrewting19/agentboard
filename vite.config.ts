@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
   const allowedHosts = env.VITE_ALLOWED_HOSTS
     ? env.VITE_ALLOWED_HOSTS.split(',').map((h) => h.trim())
     : []
+  const backendPort = env.PORT || '4040'
 
   return {
     plugins: [react()],
@@ -37,7 +38,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts,
       proxy: {
         '/api': {
-          target: 'http://localhost:4040',
+          target: `http://localhost:${backendPort}`,
           // Preserve Vite string-shorthand behavior.
           changeOrigin: true,
           configure: (proxy) => {
@@ -68,7 +69,7 @@ export default defineConfig(({ mode }) => {
           },
         },
         '/ws': {
-          target: 'ws://localhost:4040',
+          target: `ws://localhost:${backendPort}`,
           ws: true,
           configure: (proxy) => {
             const p = proxy as unknown as {
