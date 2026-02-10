@@ -619,20 +619,24 @@ export function useTerminal({
       const col = Math.floor(cols / 2)
       const row = Math.floor(rows / 2)
 
+      // NOTE: batch multiple steps into one terminal-input message. This reduces
+      // WebSocket churn (JSON stringify/send) dramatically on trackpads.
+      const steps = Math.trunc(wheelAccumRef.current / STEP)
       let scrolledUp = false
       let didScroll = false
-      while (Math.abs(wheelAccumRef.current) >= STEP) {
+      if (steps !== 0) {
         didScroll = true
-        const down = wheelAccumRef.current > 0
-        wheelAccumRef.current += down ? -STEP : STEP
+        const down = steps > 0
+        wheelAccumRef.current -= steps * STEP
 
         // SGR mouse wheel: button 64 = scroll up, 65 = scroll down
         const button = down ? 65 : 64
         if (!down) scrolledUp = true
+        const sequence = `\x1b[<${button};${col};${row}M`
         sendMessageRef.current({
           type: 'terminal-input',
           sessionId: attached,
-          data: `\x1b[<${button};${col};${row}M`
+          data: sequence.repeat(Math.abs(steps)),
         })
       }
 

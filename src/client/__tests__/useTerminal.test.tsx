@@ -444,6 +444,59 @@ describe('useTerminal', () => {
     expect(sendCalls.some((call) => call.type === 'terminal-resize')).toBe(true)
   })
 
+  test('batches wheel scroll steps into a single terminal-input message', () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: { writeText: () => Promise.resolve() },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    act(() => {
+      TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+          onScrollChange={() => {}}
+        />,
+        {
+          createNodeMock: () => container,
+        }
+      )
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) {
+      throw new Error('Expected terminal instance')
+    }
+
+    // Ignore attach/resize chatter from mount.
+    sendCalls.length = 0
+
+    act(() => {
+      terminal.emitWheel({ deltaY: -90 } as WheelEvent)
+    })
+
+    const terminalInputs = sendCalls.filter((call) => call.type === 'terminal-input')
+    expect(terminalInputs).toHaveLength(1)
+    expect(terminalInputs[0]).toEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: `\x1b[<64;40;12M`.repeat(3),
+    })
+  })
+
   test('detaches previous session and cleans up on unmount', async () => {
     globalAny.navigator = {
       userAgent: 'Chrome',
