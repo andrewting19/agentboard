@@ -28,6 +28,43 @@ function getAudioContext(): AudioContext | null {
 }
 
 /**
+ * Force-recreate the AudioContext. Safari's context can become a zombie after
+ * sleep/wake — it reports state==="running" but produces no audio. Closing and
+ * recreating is the only reliable fix.
+ */
+function recreateAudioContext(): void {
+  if (audioContext) {
+    audioContext.close().catch(() => {})
+    audioContext = null
+  }
+  getAudioContext()
+}
+
+// Recreate context on wake from sleep. Safari's AudioContext goes zombie after
+// sleep — reports "running" but produces no audio. The pageshow event (with
+// persisted=true for bfcache) and the resume event both fire after wake.
+if (typeof window !== 'undefined') {
+  // 'pageshow' fires on bfcache restore and some wake scenarios
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) recreateAudioContext()
+  })
+
+  // Visibility change is the most reliable wake signal on desktop Safari
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && audioContext) {
+      // Test if context is zombie: schedule a silent buffer and check if
+      // currentTime advances. If not, recreate.
+      const before = audioContext.currentTime
+      setTimeout(() => {
+        if (audioContext && audioContext.currentTime === before && audioContext.state === 'running') {
+          recreateAudioContext()
+        }
+      }, 200)
+    }
+  })
+}
+
+/**
  * Prime the AudioContext for later playback.
  * Call this from a user gesture (click/tap) to unlock audio on iOS/Safari.
  */
