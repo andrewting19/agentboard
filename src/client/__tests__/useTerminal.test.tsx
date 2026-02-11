@@ -689,8 +689,91 @@ describe('useTerminal', () => {
 
     // Should return false (swallowed because session is attached)
     expect(result).toBe(false)
-    // Should have called terminal.paste('') for the empty bracket paste signal
-    expect(terminal.pasteCalls).toEqual([''])
+    // Should have sent bracket paste markers directly as terminal-input
+    // (not via terminal.paste('') which depends on bracketedPasteMode being on)
+    expect(sendCalls).toContainEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[200~\x1b[201~',
+    })
+    // Should NOT have called terminal.paste() — that path depends on bracketedPasteMode
+    expect(terminal.pasteCalls).toEqual([])
+
+    act(() => {
+      renderer.unmount()
+    })
+  })
+
+  test('Ctrl+V while in tmux copy-mode exits copy-mode first', async () => {
+    globalAny.navigator = {
+      userAgent: 'Chrome',
+      platform: 'MacIntel',
+      maxTouchPoints: 0,
+      clipboard: {
+        writeText: () => Promise.resolve(),
+        readText: () => Promise.resolve(''),
+      },
+    } as unknown as Navigator
+
+    const sendCalls: Array<Record<string, unknown>> = []
+    const listeners: Array<(message: ServerMessage) => void> = []
+    const { container } = createContainerMock()
+
+    let renderer!: TestRenderer.ReactTestRenderer
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TerminalHarness
+          sessionId="session-1"
+          tmuxTarget="agentboard:@1"
+          sendMessage={(message) => sendCalls.push(message)}
+          subscribe={(listener) => {
+            listeners.push(listener)
+            return () => {}
+          }}
+          theme={{ background: '#000' }}
+          fontSize={12}
+        />,
+        {
+          createNodeMock: () => container,
+        },
+      )
+      await Promise.resolve()
+    })
+
+    const terminal = TerminalMock.instances[0]
+    if (!terminal) throw new Error('Expected terminal instance')
+
+    // Put the hook into copy-mode via server message
+    act(() => {
+      listeners[0]?.({
+        type: 'tmux-copy-mode-status',
+        sessionId: 'session-1',
+        inCopyMode: true,
+      })
+    })
+
+    sendCalls.length = 0 // Clear prior messages
+
+    // Ctrl+V while in copy-mode
+    terminal.emitKey({
+      key: 'v',
+      type: 'keydown',
+      ctrlKey: true,
+      metaKey: false,
+    })
+
+    // Should have sent tmux-cancel-copy-mode BEFORE the bracket paste
+    expect(sendCalls[0]).toEqual({
+      type: 'tmux-cancel-copy-mode',
+      sessionId: 'session-1',
+    })
+    expect(sendCalls[1]).toEqual({
+      type: 'terminal-input',
+      sessionId: 'session-1',
+      data: '\x1b[200~\x1b[201~',
+    })
+    expect(terminal.pasteCalls).toEqual([])
 
     act(() => {
       renderer.unmount()

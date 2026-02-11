@@ -50,6 +50,9 @@ export function sanitizeLink(text: string): string {
 
 const getIsMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
+/** Empty bracket paste sequence — signals a paste event without text content. */
+const BRACKET_PASTE_EMPTY = '\x1b[200~\x1b[201~'
+
 /**
  * Custom clipboard provider that prevents empty writes (matching Ghostty's behavior).
  * OSC 52 with empty base64 data clears clipboard in reference xterm, but this can
@@ -473,9 +476,16 @@ export function useTerminal({
       // no double-paste risk — we just need to convert it to a bracket paste signal.
       // Excluded on iOS: no Finder/osascript, and Ctrl+V with hardware keyboard
       // should not trigger bracket paste.
+      // Send bracket paste markers directly as raw terminal input because xterm.js's
+      // bracketedPasteMode is off (tmux intercepts DECSET 2004), so terminal.paste('')
+      // would send an empty string instead of the bracket paste sequence.
       if (getIsMac() && !isiOS && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'v' && event.type === 'keydown') {
         if (attachedSessionRef.current) {
-          terminal.paste('')
+          if (inTmuxCopyModeRef.current) {
+            sendMessageRef.current({ type: 'tmux-cancel-copy-mode', sessionId: attachedSessionRef.current })
+            setTmuxCopyMode(false)
+          }
+          sendMessageRef.current({ type: 'terminal-input', sessionId: attachedSessionRef.current, data: BRACKET_PASTE_EMPTY })
         }
         return !attachedSessionRef.current // Only swallow when attached
       }
